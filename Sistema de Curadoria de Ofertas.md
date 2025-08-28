@@ -62,10 +62,12 @@ cd /home/ubuntu/curadoria_ofertas
 
 # Crie e ative o ambiente virtual
 python3.11 -m venv venv
+python -m venv venv (windows)
 source venv/bin/activate
+venv\Scripts\activate (windows)
 
 # Instale as dependências
-pip install Flask Flask-Login SQLAlchemy python-telegram-bot requests beautifulsoup4 bcrypt
+pip install Flask Flask-Login SQLAlchemy python-telegram-bot requests beautifulsoup4 bcrypt python-dotenv
 ```
 
 ### 3. Configuração do Banco de Dados

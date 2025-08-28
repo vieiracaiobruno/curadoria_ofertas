@@ -1,3 +1,4 @@
+import os
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from sqlalchemy import func
@@ -33,7 +34,7 @@ class Validator:
             avg_price = self._get_average_price_last_months(produto.id)
             if avg_price > 0:
                 calculated_discount = ((avg_price - oferta.preco_oferta) / avg_price) * 100
-                if calculated_discount >= 10:
+                if calculated_discount >= os.getenv("REAL_DISCOUNT", 10):
                     oferta.desconto_real = calculated_discount
                     oferta.status = "APROVADA_PARA_CURADORIA"
                     print(f"Oferta {oferta.id} ({produto.nome_produto}) aprovada para curadoria (desconto real: {calculated_discount:.2f}%).")
@@ -42,7 +43,7 @@ class Validator:
                     print(f"Oferta {oferta.id} ({produto.nome_produto}) rejeitada (desconto real: {calculated_discount:.2f}% < 10%).")
             else:
                 # Se não há histórico de preço, aprova para curadoria com base no desconto informado
-                if oferta.desconto >= 10:
+                if oferta.desconto >= os.getenv("REAL_DISCOUNT", 10):
                     oferta.status = "APROVADA_PARA_CURADORIA"
                     oferta.desconto_real = oferta.desconto
                     print(f"Oferta {oferta.id} ({produto.nome_produto}) aprovada para curadoria (sem histórico, desconto informado: {oferta.desconto:.2f}%).")

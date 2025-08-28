@@ -12,7 +12,7 @@ from datetime import datetime
 project_root = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, project_root)
 
-from backend.db.database import SessionLocal, engine, Base
+#from backend.db.database import SessionLocal, engine, Base
 from backend.models.models import Usuario, Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, MetricaOferta, HistoricoPreco # Importar todos os modelos
 from backend.modules.collector import Collector
 from backend.modules.validator import Validator
@@ -59,7 +59,7 @@ def run_pipeline():
         # 4. Análise de Métricas (opcional, pode ser executado separadamente)
         logging.info("Iniciando análise de métricas...")
         metrics_analyzer = MetricsAnalyzer(db)
-        metrics_analyzer.run_analysis()
+        metrics_analyzer.analyze_metrics()
         logging.info("Análise de métricas concluída.")
 
         db.commit()

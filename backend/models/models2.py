@@ -1,32 +1,11 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
+from ..db.database import Base, produto_tags_association, canal_tags_association
 
-# Importa SEMPRE a mesma Base
-try:
-    from ..db.database import Base
-except Exception:
-    from database import Base
-
-# Tabelas de ligação N:N
-produto_tags = Table(
-    'produto_tags',
-    Base.metadata,
-    Column('produto_id', Integer, ForeignKey('produtos.id'), primary_key=True),
-    Column('tag_id', Integer, ForeignKey('tags.id'), primary_key=True),
-)
-
-canal_tags = Table(
-    'canal_tags',
-    Base.metadata,
-    Column('canal_id', Integer, ForeignKey('canais_telegram.id'), primary_key=True),
-    Column('tag_id', Integer, ForeignKey('tags.id'), primary_key=True),
-)
-
-# --------- Modelos ---------
+# Definição dos Modelos
 class Usuario(Base):
     __tablename__ = "usuarios"
-    __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
@@ -35,7 +14,6 @@ class Usuario(Base):
 
 class LojaConfiavel(Base):
     __tablename__ = "lojas_confiaveis"
-    __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
     nome_loja = Column(String, unique=True, nullable=False)
     plataforma = Column(String, nullable=False)
@@ -48,41 +26,37 @@ class LojaConfiavel(Base):
 
 class Tag(Base):
     __tablename__ = "tags"
-    __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
     nome_tag = Column(String, unique=True, nullable=False)
 
-    produtos = relationship("Produto", secondary="produto_tags", back_populates="tags")
-    canais = relationship("CanalTelegram", secondary="canal_tags", back_populates="tags")
+    produtos = relationship("Produto", secondary=produto_tags_association, back_populates="tags")
+    canais = relationship("CanalTelegram", secondary=canal_tags_association, back_populates="tags")
 
 class CanalTelegram(Base):
     __tablename__ = "canais_telegram"
-    __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
     id_canal_api = Column(String, unique=True, nullable=False)
     nome_amigavel = Column(String, nullable=False)
     ativo = Column(Boolean, default=True, nullable=False)
     inscritos = Column(Integer, default=0, nullable=False)
 
-    tags = relationship("Tag", secondary="canal_tags", back_populates="canais")
+    tags = relationship("Tag", secondary=canal_tags_association, back_populates="canais")
     ofertas_publicadas = relationship("OfertaPublicada", back_populates="canal")
 
 class Produto(Base):
     __tablename__ = "produtos"
-    __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
     product_id_loja = Column(String, unique=True, nullable=False)
     nome_produto = Column(String, nullable=False)
     url_base = Column(String, nullable=False)
     imagem_url = Column(String, nullable=True)
 
-    tags = relationship("Tag", secondary="produto_tags", back_populates="produtos")
+    tags = relationship("Tag", secondary=produto_tags_association, back_populates="produtos")
     historico_precos = relationship("HistoricoPreco", back_populates="produto")
     ofertas = relationship("Oferta", back_populates="produto")
 
 class HistoricoPreco(Base):
     __tablename__ = "historico_precos"
-    __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
     produto_id = Column(Integer, ForeignKey('produtos.id'), nullable=False)
     loja_id = Column(Integer, ForeignKey('lojas_confiaveis.id'), nullable=False)
@@ -94,7 +68,6 @@ class HistoricoPreco(Base):
 
 class Oferta(Base):
     __tablename__ = "ofertas"
-    __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
     produto_id = Column(Integer, ForeignKey('produtos.id'), nullable=False)
     loja_id = Column(Integer, ForeignKey('lojas_confiaveis.id'), nullable=False)
@@ -104,11 +77,10 @@ class Oferta(Base):
     url_afiliado_curta = Column(String, nullable=True)
     data_encontrado = Column(DateTime, default=datetime.now, nullable=False)
     data_validade = Column(DateTime, nullable=True)
-    status = Column(String, default="PENDENTE_APROVACAO", nullable=False)
+    status = Column(String, default="PENDENTE_APROVACAO", nullable=False) # PENDENTE_APROVACAO, APROVADO, REJEITADO, AGENDADO, PUBLICADO
     motivo_validacao = Column(String, nullable=True)
     data_publicacao = Column(DateTime, nullable=True)
     mensagem_id_telegram = Column(String, nullable=True)
-    desconto_real = Column(Float, nullable=True)
 
     produto = relationship("Produto", back_populates="ofertas")
     loja = relationship("LojaConfiavel", back_populates="ofertas")
@@ -116,7 +88,6 @@ class Oferta(Base):
 
 class MetricaOferta(Base):
     __tablename__ = "metricas_ofertas"
-    __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
     oferta_id = Column(Integer, ForeignKey('ofertas.id'), nullable=False)
     cliques = Column(Integer, default=0, nullable=False)
@@ -127,7 +98,6 @@ class MetricaOferta(Base):
 
 class OfertaPublicada(Base):
     __tablename__ = "ofertas_publicadas"
-    __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
     oferta_id = Column(Integer, ForeignKey('ofertas.id'), nullable=False)
     canal_id = Column(Integer, ForeignKey('canais_telegram.id'), nullable=False)

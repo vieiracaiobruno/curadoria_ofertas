@@ -57,10 +57,10 @@
             {% endif %}
             {% for oferta in ofertas %}
             <tr>
-                <td><img src="{{ oferta.produto.imagem_url or url_for(\'static\', filename=\'placeholder.png\') }}" alt="{{ oferta.produto.nome_produto }}" class="product-image-thumb"></td>
+                <td><img src="{{ oferta.produto.imagem_url or url_for('static', filename='placeholder.png') }}" alt="{{ oferta.produto.nome_produto }}" class="product-image-thumb"></td>
                 <td>{{ oferta.produto.nome_produto }}</td>
                 <td>R$ {{ "%.2f"|format(oferta.preco_oferta) }}</td>
-                <td>{{ oferta.data_publicacao.strftime(\"%d/%m/%Y %H:%M\") if oferta.data_publicacao else \"N/A\" }}</td>
+                <td>{{ oferta.data_publicacao.strftime("%d/%m/%Y %H:%M") if oferta.data_publicacao else "N/A" }}</td>
                 <td>{{ oferta.metricas[0].cliques if oferta.metricas else 0 }}</td>
                 <td>{{ oferta.metricas[0].vendas if oferta.metricas else 0 }}</td>
                 <td>

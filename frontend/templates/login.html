@@ -47,7 +47,7 @@
             {% endif %}
         {% endwith %}
 
-        <form method="POST" action="{{ url_for(\'login\') }}">
+        <form method="POST" action="{{ url_for('login') }}">
             <div class="mb-3">
                 <label for="username" class="form-label">Nome de Usuário</label>
                 <input type="text" class="form-control" id="username" name="username" required>

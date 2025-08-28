@@ -58,7 +58,7 @@
     <div class="card card-oferta mb-4" id="oferta-{{ oferta.id }}">
         <div class="row g-0">
             <div class="col-md-2 d-flex align-items-center justify-content-center p-3">
-                <img src="{{ oferta.produto.imagem_url or url_for(\'static\', filename=\'placeholder.png\') }}" class="img-fluid rounded-start product-image" alt="{{ oferta.produto.nome_produto }}">
+                <img src="{{ oferta.produto.imagem_url or url_for('static', filename='placeholder.png') }}" class="img-fluid rounded-start product-image" alt="{{ oferta.produto.nome_produto }}">
             </div>
             <div class="col-md-10">
                 <div class="card-body">
