@@ -1,17 +1,22 @@
 
+import os
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 from datetime import datetime
 import bcrypt
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv('config.env')
 
 from backend.db.database import DATABASE_URL, Base, SessionLocal
 from backend.models.models import Usuario, Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, MetricaOferta
 from backend.utils.auth import hash_password, check_password
 
 app = Flask(__name__, template_folder='./frontend/templates', static_folder='./frontend/static')
-app.config["SECRET_KEY"] = "sua_chave_secreta_aqui_para_producao"
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "sua_chave_secreta_aqui_para_producao")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -104,9 +109,14 @@ app.register_blueprint(api_bp, url_prefix="/api")
 @app.route("/setup_admin")
 def setup_admin():
     db = SessionLocal()
-    if not db.query(Usuario).filter_by(username="admin").first():
-        hashed_pw = hash_password("admin_password") # Mude para uma senha forte em produção
-        admin_user = Usuario(username="admin", password_hash=hashed_pw, email="admin@example.com", is_admin=True)
+    if not db.query(Usuario).filter_by(username=os.getenv("ADMIN_USERNAME", "admin")).first():
+        hashed_pw = hash_password(os.getenv("ADMIN_PASSWORD", "admin_password"))
+        admin_user = Usuario(
+            username=os.getenv("ADMIN_USERNAME", "admin"), 
+            password_hash=hashed_pw, 
+            email=os.getenv("ADMIN_EMAIL", "admin@example.com"), 
+            is_admin=True
+        )
         db.add(admin_user)
         db.commit()
         db.close()
@@ -118,12 +128,21 @@ if __name__ == "__main__":
     # Crie um usuário admin inicial se não existir
     with app.app_context():
         db = SessionLocal()
-        if not db.query(Usuario).filter_by(username="admin").first():
-            hashed_pw = hash_password("admin_password") # Mude para uma senha forte em produção
-            admin_user = Usuario(username="admin", password_hash=hashed_pw, email="admin@example.com", is_admin=True)
+        if not db.query(Usuario).filter_by(username=os.getenv("ADMIN_USERNAME", "admin")).first():
+            hashed_pw = hash_password(os.getenv("ADMIN_PASSWORD", "admin_password"))
+            admin_user = Usuario(
+                username=os.getenv("ADMIN_USERNAME", "admin"), 
+                password_hash=hashed_pw, 
+                email=os.getenv("ADMIN_EMAIL", "admin@example.com"), 
+                is_admin=True
+            )
             db.add(admin_user)
             db.commit()
-            print("Usuário admin inicial 'admin' com senha 'admin_password' criado.")
+            print(f"Usuário admin inicial '{os.getenv('ADMIN_USERNAME', 'admin')}' criado.")
         db.close()
 
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(
+        debug=os.getenv("FLASK_DEBUG", "True").lower() == "true", 
+        host="0.0.0.0", 
+        port=5000
+    )

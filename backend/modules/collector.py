@@ -2,8 +2,8 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from sqlalchemy.orm import Session
-from curadoria_ofertas.backend.models.models import Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag
-from curadoria_ofertas.backend.db.database import SessionLocal
+from ..models.models import Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag
+from ..db.database import SessionLocal
 
 class Collector:
     def __init__(self, db_session: Session):

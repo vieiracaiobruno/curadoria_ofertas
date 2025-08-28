@@ -15,7 +15,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/home/ubuntu/curadoria_ofertas/pipeline.log'),
+        logging.FileHandler('./logs/pipeline.log'),
         logging.StreamHandler()
     ]
 )
@@ -93,7 +93,7 @@ def publish_offers(ofertas_validas):
 
 def save_results(ofertas_publicadas):
     """Salva os resultados em arquivo JSON"""
-    results_file = "/home/ubuntu/curadoria_ofertas/pipeline_results.json"
+    results_file = "./logs/pipeline_results.json"
     
     # Carrega resultados anteriores se existirem
     try:

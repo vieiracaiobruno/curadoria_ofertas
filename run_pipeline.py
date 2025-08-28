@@ -22,10 +22,9 @@ from backend.modules.metrics_analyzer import MetricsAnalyzer
 # Configuração de logging
 logging.basicConfig(
     level=logging.INFO,
-    format=\'%(asctime)s - %(levelname)s - %(message)s\
-
+    format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(\"/home/ubuntu/curadoria_ofertas/pipeline.log\"),
+        logging.FileHandler("./logs/pipeline.log"),
         logging.StreamHandler()
     ]
 )

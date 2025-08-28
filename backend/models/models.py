@@ -2,7 +2,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from ..db.database import Base
+from ..db.database import Base, produto_tags_association, canal_tags_association
 
 # Definição dos Modelos
 class Usuario(Base):
@@ -30,8 +30,8 @@ class Tag(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome_tag = Column(String, unique=True, nullable=False)
 
-    produtos = relationship("Produto", secondary="produto_tags", back_populates="tags")
-    canais = relationship("CanalTelegram", secondary="canal_tags", back_populates="tags")
+    produtos = relationship("Produto", secondary=produto_tags_association, back_populates="tags")
+    canais = relationship("CanalTelegram", secondary=canal_tags_association, back_populates="tags")
 
 class CanalTelegram(Base):
     __tablename__ = "canais_telegram"
@@ -41,7 +41,7 @@ class CanalTelegram(Base):
     ativo = Column(Boolean, default=True, nullable=False)
     inscritos = Column(Integer, default=0, nullable=False)
 
-    tags = relationship("Tag", secondary="canal_tags", back_populates="canais")
+    tags = relationship("Tag", secondary=canal_tags_association, back_populates="canais")
     ofertas_publicadas = relationship("OfertaPublicada", back_populates="canal")
 
 class Produto(Base):
@@ -52,7 +52,7 @@ class Produto(Base):
     url_base = Column(String, nullable=False)
     imagem_url = Column(String, nullable=True)
 
-    tags = relationship("Tag", secondary="produto_tags", back_populates="produtos")
+    tags = relationship("Tag", secondary=produto_tags_association, back_populates="produtos")
     historico_precos = relationship("HistoricoPreco", back_populates="produto")
     ofertas = relationship("Oferta", back_populates="produto")
 
