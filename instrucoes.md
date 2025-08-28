@@ -13,3 +13,24 @@ Initialize the database:
 Run the application:
    python app.py
 The project structure is now clean, secure, and follows best practices. All the import issues have been resolved, and the application should run without problems once Python is properly installed.
+
+# Database Configuration
+DATABASE_URL=sqlite:///./backend/db/curadoria_ofertas.db
+
+# Flask Configuration
+SECRET_KEY=your-secret-key-change-this-in-production
+FLASK_ENV=development
+FLASK_DEBUG=True
+
+# Admin Configuration
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-this-password
+ADMIN_EMAIL=admin@example.com
+
+# Logging Configuration
+LOG_FILE=./logs/pipeline.log
+RESULTS_FILE=./logs/pipeline_results.json
+
+# Telegram Configuration
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+TELEGRAM_CHANNEL_ID=your-channel-id
