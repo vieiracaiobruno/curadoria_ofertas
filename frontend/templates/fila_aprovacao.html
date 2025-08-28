@@ -1,0 +1,258 @@
+
+{% extends "base.html" %}
+
+{% block title %}Fila de Aprovação{% endblock %}
+
+{% block head_extra %}
+<style>
+    .card-oferta {
+        transition: box-shadow .3s;
+    }
+    .card-oferta:hover {
+        box-shadow: 0 .5rem 1rem rgba(0,0,0,.15);
+    }
+    .tag {
+        cursor: pointer;
+        margin-bottom: 5px;
+        display: inline-flex;
+        align-items: center;
+    }
+    .tag .remove-tag {
+        margin-left: 5px;
+        cursor: pointer;
+        color: rgba(255,255,255,0.7);
+    }
+    .tag .remove-tag:hover {
+        color: #dc3545; /* Vermelho do Bootstrap */
+    }
+    .preco-desconto {
+        font-size: 1.75rem;
+        font-weight: bold;
+        color: #198754; /* Verde do Bootstrap */
+    }
+    .preco-original {
+        text-decoration: line-through;
+        color: #6c757d; /* Cinza do Bootstrap */
+        margin-left: 10px;
+    }
+    .product-image {
+        max-width: 100%;
+        height: auto;
+        max-height: 150px;
+        object-fit: contain;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Fila de Aprovação (<span id="contador-ofertas">{{ ofertas|length }}</span>)</h1>
+
+<div id="ofertas-container">
+    {% if not ofertas %}
+        <div class="alert alert-info" role="alert">
+            Nenhuma oferta pendente de aprovação no momento.
+        </div>
+    {% endif %}
+
+    {% for oferta in ofertas %}
+    <div class="card card-oferta mb-4" id="oferta-{{ oferta.id }}">
+        <div class="row g-0">
+            <div class="col-md-2 d-flex align-items-center justify-content-center p-3">
+                <img src="{{ oferta.produto.imagem_url or url_for(\'static\', filename=\'placeholder.png\') }}" class="img-fluid rounded-start product-image" alt="{{ oferta.produto.nome_produto }}">
+            </div>
+            <div class="col-md-10">
+                <div class="card-body">
+                    <h5 class="card-title">{{ oferta.produto.nome_produto }}</h5>
+                    <p class="card-text"><small class="text-muted">Vendido por {{ oferta.loja.nome_loja }}</small></p>
+                    
+                    <div>
+                        <span class="preco-desconto">R$ {{ "%.2f"|format(oferta.preco_oferta) }}</span>
+                        {% if oferta.preco_original %}
+                        <span class="preco-original">R$ {{ "%.2f"|format(oferta.preco_original) }}</span>
+                        {% endif %}
+                    </div>
+                    <p class="text-warning fw-bold mt-1"><i class="bi bi-star-fill"></i> {{ oferta.motivo_validacao }}</p>
+
+                    <div class="mt-3">
+                        <label class="form-label fw-bold">Tags (Categorias):</label>
+                        <div class="tags-input-container" data-oferta-id="{{ oferta.id }}">
+                            {% for tag in oferta.produto.tags %}
+                            <span class="badge bg-primary p-2 me-1 tag" data-tag-id="{{ tag.id }}">#{{ tag.nome_tag }} <i class="bi bi-x-circle ms-1 remove-tag"></i></span>
+                            {% endfor %}
+                            <input type="text" class="form-control form-control-sm mt-2 tag-input" placeholder="Adicionar nova tag e pressionar Enter">
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <p class="fw-bold mb-1">Canais de Destino:</p>
+                        <p class="canais-destino-text"><i class="bi bi-telegram text-primary"></i> Carregando...</p>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2 mt-3">
+                        <button class="btn btn-danger btn-rejeitar" data-oferta-id="{{ oferta.id }}"><i class="bi bi-trash-fill"></i> Rejeitar</button>
+                        <button class="btn btn-secondary btn-agendar" data-oferta-id="{{ oferta.id }}"><i class="bi bi-clock-fill"></i> Agendar</button>
+                        <button class="btn btn-success btn-aprovar" data-oferta-id="{{ oferta.id }}"><i class="bi bi-check-circle-fill"></i> Aprovar e Postar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Função para atualizar o contador de ofertas
+        function updateOfferCount() {
+            const count = document.querySelectorAll(".card-oferta").length;
+            document.getElementById("contador-ofertas").textContent = count;
+        }
+
+        // Função para carregar e exibir os canais de destino
+        async function loadDestinationChannels(ofertaId, tagsContainer) {
+            const tags = Array.from(tagsContainer.querySelectorAll(".tag")).map(tagEl => tagEl.textContent.trim().replace("#", "").replace(" ", ""));
+            const canaisDestinoText = tagsContainer.closest(".card-body").querySelector(".canais-destino-text");
+            canaisDestinoText.innerHTML = `<i class="bi bi-telegram text-primary"></i> Carregando...`;
+
+            try {
+                const response = await fetch(`/api/canais_destino?tags=${tags.join(",")}`);
+                const data = await response.json();
+                if (data.status === "success") {
+                    if (data.canais.length > 0) {
+                        canaisDestinoText.innerHTML = `<i class="bi bi-telegram text-primary"></i> ${data.canais.map(c => c.nome_amigavel).join(", ")}`;
+                    } else {
+                        canaisDestinoText.innerHTML = `<i class="bi bi-telegram text-warning"></i> Nenhum canal encontrado para estas tags.`;
+                    }
+                } else {
+                    canaisDestinoText.innerHTML = `<i class="bi bi-exclamation-triangle text-danger"></i> Erro ao carregar canais.`;
+                }
+            } catch (error) {
+                console.error("Erro ao carregar canais de destino:", error);
+                canaisDestinoText.innerHTML = `<i class="bi bi-exclamation-triangle text-danger"></i> Erro de rede.`;
+            }
+        }
+
+        // Inicializa os canais de destino para todas as ofertas ao carregar a página
+        document.querySelectorAll(".tags-input-container").forEach(container => {
+            const ofertaId = container.dataset.ofertaId;
+            loadDestinationChannels(ofertaId, container);
+        });
+
+        // Event listener para remover tags
+        document.querySelectorAll(".remove-tag").forEach(button => {
+            button.addEventListener("click", function() {
+                const tagElement = this.closest(".tag");
+                const tagsContainer = tagElement.closest(".tags-input-container");
+                const ofertaId = tagsContainer.dataset.ofertaId;
+                tagElement.remove();
+                loadDestinationChannels(ofertaId, tagsContainer); // Recarrega canais após remover tag
+            });
+        });
+
+        // Event listener para adicionar tags
+        document.querySelectorAll(".tag-input").forEach(input => {
+            input.addEventListener("keypress", async function(event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    const newTag = this.value.trim().toLowerCase();
+                    if (newTag) {
+                        const tagsContainer = this.closest(".tags-input-container");
+                        const ofertaId = tagsContainer.dataset.ofertaId;
+                        const existingTags = Array.from(tagsContainer.querySelectorAll(".tag")).map(tagEl => tagEl.textContent.trim().replace("#", "").replace(" ", ""));
+
+                        if (!existingTags.includes("#" + newTag)) {
+                            const newTagBadge = document.createElement("span");
+                            newTagBadge.className = "badge bg-primary p-2 me-1 tag";
+                            newTagBadge.dataset.tagId = "new"; // Temporário, será atualizado pelo backend
+                            newTagBadge.innerHTML = `#${newTag} <i class="bi bi-x-circle ms-1 remove-tag"></i>`;
+                            tagsContainer.insertBefore(newTagBadge, this);
+                            this.value = "";
+
+                            // Adiciona event listener para a nova tag
+                            newTagBadge.querySelector(".remove-tag").addEventListener("click", function() {
+                                const tagElement = this.closest(".tag");
+                                const tagsContainer = tagElement.closest(".tags-input-container");
+                                const ofertaId = tagsContainer.dataset.ofertaId;
+                                tagElement.remove();
+                                loadDestinationChannels(ofertaId, tagsContainer); // Recarrega canais após remover tag
+                            });
+                            loadDestinationChannels(ofertaId, tagsContainer); // Recarrega canais após adicionar tag
+                        }
+                    }
+                }
+            });
+        });
+
+        // Event listeners para os botões de ação
+        document.querySelectorAll(".btn-aprovar").forEach(button => {
+            button.addEventListener("click", async function() {
+                const ofertaId = this.dataset.ofertaId;
+                const tagsContainer = this.closest(".card-oferta").querySelector(".tags-input-container");
+                const tags = Array.from(tagsContainer.querySelectorAll(".tag")).map(tagEl => tagEl.textContent.trim().replace("#", "").replace(" ", ""));
+
+                if (confirm("Tem certeza que deseja aprovar e postar esta oferta?")) {
+                    const response = await fetch(`/api/ofertas/${ofertaId}/aprovar`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ tags: tags })
+                    });
+                    const data = await response.json();
+                    if (data.status === "success") {
+                        document.getElementById(`oferta-${ofertaId}`).remove();
+                        updateOfferCount();
+                    } else {
+                        alert("Erro ao aprovar oferta: " + data.message);
+                    }
+                }
+            });
+        });
+
+        document.querySelectorAll(".btn-rejeitar").forEach(button => {
+            button.addEventListener("click", async function() {
+                const ofertaId = this.dataset.ofertaId;
+                if (confirm("Tem certeza que deseja rejeitar esta oferta?")) {
+                    const response = await fetch(`/api/ofertas/${ofertaId}/rejeitar`, {
+                        method: "POST"
+                    });
+                    const data = await response.json();
+                    if (data.status === "success") {
+                        document.getElementById(`oferta-${ofertaId}`).remove();
+                        updateOfferCount();
+                    } else {
+                        alert("Erro ao rejeitar oferta: " + data.message);
+                    }
+                }
+            });
+        });
+
+        document.querySelectorAll(".btn-agendar").forEach(button => {
+            button.addEventListener("click", async function() {
+                const ofertaId = this.dataset.ofertaId;
+                const dataAgendamento = prompt("Para qual data e hora você deseja agendar? (YYYY-MM-DDTHH:MM:SS)");
+                if (dataAgendamento) {
+                    const response = await fetch(`/api/ofertas/${ofertaId}/agendar`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ data_agendamento: dataAgendamento })
+                    });
+                    const data = await response.json();
+                    if (data.status === "success") {
+                        document.getElementById(`oferta-${ofertaId}`).remove();
+                        updateOfferCount();
+                    } else {
+                        alert("Erro ao agendar oferta: " + data.message);
+                    }
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}
+
+

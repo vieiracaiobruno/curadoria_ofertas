@@ -1,0 +1,279 @@
+
+{% extends "base.html" %}
+
+{% block title %}Configurações{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Configurações</h1>
+
+<div class="row">
+    <!-- Gerenciar Lojas Confiáveis -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">Gerenciar Lojas Confiáveis</div>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Nome da Loja</th>
+                            <th>Plataforma</th>
+                            <th>Confiança</th>
+                            <th>Ativa</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for loja in lojas %}
+                        <tr>
+                            <td>{{ loja.nome_loja }}</td>
+                            <td>{{ loja.plataforma }}</td>
+                            <td>{{ loja.pontuacao_confianca }} <i class="bi bi-star-fill text-warning"></i></td>
+                            <td>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="lojaSwitch{{ loja.id }}" {% if loja.ativa %}checked{% endif %} disabled>
+                                </div>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-info"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addLojaModal">Adicionar Loja</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gerenciar Tags -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">Gerenciar Tags</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    {% for tag in tags %}
+                    <span class="badge bg-secondary p-2 me-1 mb-1">#{{ tag.nome_tag }} <i class="bi bi-x-circle remove-tag-btn" data-tag-id="{{ tag.id }}"></i></span>
+                    {% endfor %}
+                </div>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="newTagInput" placeholder="Nova Tag">
+                    <button class="btn btn-primary" id="addTagBtn">Adicionar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gerenciar Canais -->
+    <div class="col-md-12 mb-4">
+        <div class="card">
+            <div class="card-header">Gerenciar Canais Telegram</div>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Nome do Canal</th>
+                            <th>ID API</th>
+                            <th>Tags Associadas</th>
+                            <th>Inscritos</th>
+                            <th>Ativo</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for canal in canais %}
+                        <tr>
+                            <td>{{ canal.nome_amigavel }}</td>
+                            <td>{{ canal.id_canal_api }}</td>
+                            <td>
+                                {% for tag in canal.tags %}
+                                <span class="badge bg-info text-dark me-1">#{{ tag.nome_tag }}</span>
+                                {% endfor %}
+                            </td>
+                            <td>{{ canal.inscritos }}</td>
+                            <td>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="canalSwitch{{ canal.id }}" {% if canal.ativo %}checked{% endif %} disabled>
+                                </div>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-info"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCanalModal">Adicionar Canal</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Adicionar Loja -->
+<div class="modal fade" id="addLojaModal" tabindex="-1" aria-labelledby="addLojaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addLojaModalLabel">Adicionar Nova Loja</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addLojaForm">
+                    <div class="mb-3">
+                        <label for="nomeLoja" class="form-label">Nome da Loja</label>
+                        <input type="text" class="form-control" id="nomeLoja" name="nome_loja" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="plataformaLoja" class="form-label">Plataforma</label>
+                        <select class="form-select" id="plataformaLoja" name="plataforma" required>
+                            <option value="Amazon">Amazon</option>
+                            <option value="Mercado Livre">Mercado Livre</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="pontuacaoConfianca" class="form-label">Pontuação de Confiança</label>
+                        <input type="number" class="form-control" id="pontuacaoConfianca" name="pontuacao_confianca" min="1" max="5" value="3">
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="ativaLoja" name="ativa" checked>
+                        <label class="form-check-label" for="ativaLoja">Ativa</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Salvar Loja</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Adicionar Canal -->
+<div class="modal fade" id="addCanalModal" tabindex="-1" aria-labelledby="addCanalModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addCanalModalLabel">Adicionar Novo Canal Telegram</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addCanalForm">
+                    <div class="mb-3">
+                        <label for="nomeCanal" class="form-label">Nome Amigável</label>
+                        <input type="text" class="form-control" id="nomeCanal" name="nome_amigavel" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="idCanalApi" class="form-label">ID do Canal (API)</label>
+                        <input type="text" class="form-control" id="idCanalApi" name="id_canal_api" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="inscritosCanal" class="form-label">Número de Inscritos</label>
+                        <input type="number" class="form-control" id="inscritosCanal" name="inscritos" value="0">
+                    </div>
+                    <div class="mb-3">
+                        <label for="tagsCanal" class="form-label">Tags Associadas (separadas por vírgula)</label>
+                        <input type="text" class="form-control" id="tagsCanal" name="tags_associadas">
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="ativoCanal" name="ativo" checked>
+                        <label class="form-check-label" for="ativoCanal">Ativo</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Salvar Canal</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Adicionar Tag
+        document.getElementById("addTagBtn").addEventListener("click", async function() {
+            const newTagInput = document.getElementById("newTagInput");
+            const tagName = newTagInput.value.trim().toLowerCase();
+            if (tagName) {
+                const response = await fetch("/api/tags", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ nome_tag: tagName })
+                });
+                const data = await response.json();
+                if (data.status === "success") {
+                    location.reload(); // Recarrega a página para mostrar a nova tag
+                } else {
+                    alert("Erro ao adicionar tag: " + data.message);
+                }
+            }
+        });
+
+        // Remover Tag
+        document.querySelectorAll(".remove-tag-btn").forEach(button => {
+            button.addEventListener("click", async function() {
+                const tagId = this.dataset.tagId;
+                if (confirm("Tem certeza que deseja remover esta tag?")) {
+                    const response = await fetch(`/api/tags/${tagId}`, {
+                        method: "DELETE"
+                    });
+                    const data = await response.json();
+                    if (data.status === "success") {
+                        location.reload();
+                    } else {
+                        alert("Erro ao remover tag: " + data.message);
+                    }
+                }
+            });
+        });
+
+        // Adicionar Loja
+        document.getElementById("addLojaForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            const data = Object.fromEntries(formData.entries());
+            data.ativa = data.ativa === "on"; // Converte checkbox para boolean
+            data.pontuacao_confianca = parseInt(data.pontuacao_confianca);
+
+            const response = await fetch("/api/lojas", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            if (result.status === "success") {
+                location.reload();
+            } else {
+                alert("Erro ao adicionar loja: " + result.message);
+            }
+        });
+
+        // Adicionar Canal
+        document.getElementById("addCanalForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            const data = Object.fromEntries(formData.entries());
+            data.ativo = data.ativo === "on";
+            data.inscritos = parseInt(data.inscritos);
+            data.tags_associadas = data.tags_associadas.split(",").map(tag => tag.trim()).filter(tag => tag.length > 0);
+
+            const response = await fetch("/api/canais", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+            if (result.status === "success") {
+                location.reload();
+            } else {
+                alert("Erro ao adicionar canal: " + result.message);
+            }
+        });
+    });
+</script>
+{% endblock %}
+
+
