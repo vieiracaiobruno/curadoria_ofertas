@@ -28,7 +28,7 @@ except Exception:
                 Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag
             )  # type: ignore
         except Exception:
-            from model import (
+            from models import (
                 Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag
             )  # type: ignore
         try:

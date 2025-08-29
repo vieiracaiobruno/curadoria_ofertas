@@ -68,7 +68,7 @@ source venv/bin/activate
 venv\Scripts\activate (windows)
 
 # Instale as dependências
-pip install Flask Flask-Login SQLAlchemy python-telegram-bot requests beautifulsoup4 bcrypt python-dotenv selenium undetected-chromedriver webdriver-manager requests
+pip install Flask Flask-Login SQLAlchemy python-telegram-bot requests beautifulsoup4 bcrypt python-dotenv selenium undetected-chromedriver webdriver-manager requests websockets packaging certifi trio trio-websocket typing_extensions urllib3 websocket-client setuptools
 ```
 
 ### 3. Configuração do Banco de Dados
