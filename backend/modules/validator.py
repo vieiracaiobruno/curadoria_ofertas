@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from sqlalchemy import func
 
-from curadoria_ofertas.backend.models.models import Oferta, HistoricoPreco, Produto
+from backend.models.models import Oferta, HistoricoPreco, Produto
 
 class Validator:
     def __init__(self, db_session: Session):

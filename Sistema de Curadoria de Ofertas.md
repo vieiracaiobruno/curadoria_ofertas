@@ -63,11 +63,12 @@ cd /home/ubuntu/curadoria_ofertas
 # Crie e ative o ambiente virtual
 python3.11 -m venv venv
 python -m venv venv (windows)
+
 source venv/bin/activate
 venv\Scripts\activate (windows)
 
 # Instale as dependências
-pip install Flask Flask-Login SQLAlchemy python-telegram-bot requests beautifulsoup4 bcrypt python-dotenv
+pip install Flask Flask-Login SQLAlchemy python-telegram-bot requests beautifulsoup4 bcrypt python-dotenv selenium undetected-chromedriver webdriver-manager requests
 ```
 
 ### 3. Configuração do Banco de Dados
@@ -75,6 +76,7 @@ pip install Flask Flask-Login SQLAlchemy python-telegram-bot requests beautifuls
 ```bash
 # Crie as tabelas do banco de dados
 python3.11 backend/db/database.py
+python backend/db/database.py (windows)
 ```
 
 ### 4. Configuração de APIs
@@ -109,6 +111,7 @@ source venv/bin/activate
 
 # Inicie a aplicação Flask
 python3.11 app.py
+python app.py (windows)
 ```
 
 A aplicação estará disponível em: http://localhost:5000
@@ -122,6 +125,7 @@ A aplicação estará disponível em: http://localhost:5000
 ```bash
 # Execute o pipeline completo uma vez
 python3.11 run_pipeline.py
+python run_pipeline.py(windows)
 ```
 
 ### 3. Usando o Painel Web

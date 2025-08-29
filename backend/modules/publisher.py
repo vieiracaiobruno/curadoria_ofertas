@@ -2,7 +2,7 @@ import requests
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from curadoria_ofertas.backend.models.models import Oferta, CanalTelegram, Produto, LojaConfiavel, MetricaOferta
+from backend.models.models import Oferta, CanalTelegram, Produto, LojaConfiavel, MetricaOferta
 
 class Publisher:
     def __init__(self, db_session: Session):

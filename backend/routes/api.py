@@ -1,4 +1,3 @@
-
 from flask import Blueprint, request, jsonify
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
@@ -49,7 +48,7 @@ def get_canais_destino():
 @api_bp.route("/ofertas/<int:oferta_id>/aprovar", methods=["POST"])
 def api_aprovar_oferta(oferta_id):
     db = SessionLocal()
-    oferta = db.query(Oferta).get(oferta_id)
+    oferta = db.get(Oferta, oferta_id)
     if not oferta:
         db.close()
         return jsonify({"status": "error", "message": "Oferta não encontrada."}), 404
@@ -57,8 +56,8 @@ def api_aprovar_oferta(oferta_id):
     try:
         # Atualiza as tags do produto se forem enviadas
         tags_from_frontend = request.json.get("tags", [])
-        produto = db.query(Produto).get(oferta.produto_id)
-        if produto and tags_from_frontend is not None: # Permite que tags_from_frontend seja [] para remover todas
+        produto = db.get(Produto, oferta.produto_id)
+        if produto is not None and tags_from_frontend is not None: # Permite [] para remover todas
             # Remove tags existentes
             produto.tags.clear()
             # Adiciona novas tags
@@ -82,7 +81,7 @@ def api_aprovar_oferta(oferta_id):
 @api_bp.route("/ofertas/<int:oferta_id>/rejeitar", methods=["POST"])
 def api_rejeitar_oferta(oferta_id):
     db = SessionLocal()
-    oferta = db.query(Oferta).get(oferta_id)
+    oferta = db.get(Oferta, oferta_id)
     if not oferta:
         db.close()
         return jsonify({"status": "error", "message": "Oferta não encontrada."}), 404
@@ -100,7 +99,7 @@ def api_rejeitar_oferta(oferta_id):
 @api_bp.route("/ofertas/<int:oferta_id>/agendar", methods=["POST"])
 def api_agendar_oferta(oferta_id):
     db = SessionLocal()
-    oferta = db.query(Oferta).get(oferta_id)
+    oferta = db.get(Oferta, oferta_id)
     if not oferta:
         db.close()
         return jsonify({"status": "error", "message": "Oferta não encontrada."}), 404
@@ -152,7 +151,7 @@ def api_add_loja():
 @api_bp.route("/lojas/<int:loja_id>", methods=["PUT"])
 def api_update_loja(loja_id):
     db = SessionLocal()
-    loja = db.query(LojaConfiavel).get(loja_id)
+    loja = db.get(LojaConfiavel, loja_id)
     if not loja:
         db.close()
         return jsonify({"status": "error", "message": "Loja não encontrada."}), 404
@@ -175,7 +174,7 @@ def api_update_loja(loja_id):
 @api_bp.route("/lojas/<int:loja_id>", methods=["DELETE"])
 def api_delete_loja(loja_id):
     db = SessionLocal()
-    loja = db.query(LojaConfiavel).get(loja_id)
+    loja = db.get(LojaConfiavel, loja_id)
     if not loja:
         db.close()
         return jsonify({"status": "error", "message": "Loja não encontrada."}), 404
@@ -214,7 +213,7 @@ def api_add_tag():
 @api_bp.route("/tags/<int:tag_id>", methods=["DELETE"])
 def api_delete_tag(tag_id):
     db = SessionLocal()
-    tag = db.query(Tag).get(tag_id)
+    tag = db.get(Tag, tag_id)
     if not tag:
         db.close()
         return jsonify({"status": "error", "message": "Tag não encontrada."}), 404
@@ -264,7 +263,7 @@ def api_add_canal():
 @api_bp.route("/canais/<int:canal_id>", methods=["PUT"])
 def api_update_canal(canal_id):
     db = SessionLocal()
-    canal = db.query(CanalTelegram).get(canal_id)
+    canal = db.get(CanalTelegram, canal_id)
     if not canal:
         db.close()
         return jsonify({"status": "error", "message": "Canal não encontrado."}), 404
@@ -299,7 +298,7 @@ def api_update_canal(canal_id):
 @api_bp.route("/canais/<int:canal_id>", methods=["DELETE"])
 def api_delete_canal(canal_id):
     db = SessionLocal()
-    canal = db.query(CanalTelegram).get(canal_id)
+    canal = db.get(CanalTelegram, canal_id)
     if not canal:
         db.close()
         return jsonify({"status": "error", "message": "Canal não encontrado."}), 404
@@ -313,5 +312,3 @@ def api_delete_canal(canal_id):
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         db.close()
-
-

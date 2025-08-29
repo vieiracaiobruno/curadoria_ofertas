@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 
 {% block title %}Configurações{% endblock %}
@@ -24,7 +23,12 @@
                     </thead>
                     <tbody>
                         {% for loja in lojas %}
-                        <tr>
+                        <tr data-loja-id="{{ loja.id }}"
+                            data-loja-nome="{{ loja.nome_loja }}"
+                            data-loja-plataforma="{{ loja.plataforma }}"
+                            data-loja-pontuacao="{{ loja.pontuacao_confianca }}"
+                            data-loja-ativa="{{ 1 if loja.ativa else 0 }}"
+                            data-loja-idapi="{{ loja.id_loja_api or '' }}">
                             <td>{{ loja.nome_loja }}</td>
                             <td>{{ loja.plataforma }}</td>
                             <td>{{ loja.pontuacao_confianca }} <i class="bi bi-star-fill text-warning"></i></td>
@@ -34,8 +38,8 @@
                                 </div>
                             </td>
                             <td>
-                                <button class="btn btn-sm btn-info"><i class="bi bi-pencil"></i></button>
-                                <button class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></button>
+                                <button class="btn btn-sm btn-info edit-loja-btn" title="Editar"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-sm btn-danger delete-loja-btn" title="Remover"><i class="bi bi-trash"></i></button>
                             </td>
                         </tr>
                         {% endfor %}
@@ -82,7 +86,12 @@
                     </thead>
                     <tbody>
                         {% for canal in canais %}
-                        <tr>
+                        <tr data-canal-id="{{ canal.id }}"
+                            data-canal-nome="{{ canal.nome_amigavel }}"
+                            data-canal-idapi="{{ canal.id_canal_api }}"
+                            data-canal-inscritos="{{ canal.inscritos }}"
+                            data-canal-ativo="{{ 1 if canal.ativo else 0 }}"
+                            data-canal-tags="{{ canal.tags | map(attribute='nome_tag') | join(',') }}"
                             <td>{{ canal.nome_amigavel }}</td>
                             <td>{{ canal.id_canal_api }}</td>
                             <td>
@@ -97,8 +106,8 @@
                                 </div>
                             </td>
                             <td>
-                                <button class="btn btn-sm btn-info"><i class="bi bi-pencil"></i></button>
-                                <button class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></button>
+                                <button class="btn btn-sm btn-info edit-canal-btn" title="Editar"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-sm btn-danger delete-canal-btn" title="Remover"><i class="bi bi-trash"></i></button>
                             </td>
                         </tr>
                         {% endfor %}
@@ -132,6 +141,11 @@
                         </select>
                     </div>
                     <div class="mb-3">
+                        <label for="idLojaApi" class="form-label">Slug/ID da Loja (opcional)</label>
+                        <input type="text" class="form-control" id="idLojaApi" name="id_loja_api" placeholder="ex.: fast-shop">
+                        <div class="form-text">Se vazio, será gerado a partir do nome.</div>
+                    </div>
+                    <div class="mb-3">
                         <label for="pontuacaoConfianca" class="form-label">Pontuação de Confiança</label>
                         <input type="number" class="form-control" id="pontuacaoConfianca" name="pontuacao_confianca" min="1" max="5" value="3">
                     </div>
@@ -140,6 +154,47 @@
                         <label class="form-check-label" for="ativaLoja">Ativa</label>
                     </div>
                     <button type="submit" class="btn btn-primary">Salvar Loja</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Editar Loja -->
+<div class="modal fade" id="editLojaModal" tabindex="-1" aria-labelledby="editLojaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editLojaModalLabel">Editar Loja</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editLojaForm">
+                    <input type="hidden" id="editLojaId">
+                    <div class="mb-3">
+                        <label for="editNomeLoja" class="form-label">Nome da Loja</label>
+                        <input type="text" class="form-control" id="editNomeLoja" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editPlataformaLoja" class="form-label">Plataforma</label>
+                        <select class="form-select" id="editPlataformaLoja" required>
+                            <option value="Amazon">Amazon</option>
+                            <option value="Mercado Livre">Mercado Livre</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editIdLojaApi" class="form-label">Slug/ID da Loja</label>
+                        <input type="text" class="form-control" id="editIdLojaApi" placeholder="ex.: fast-shop">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editPontuacaoConfianca" class="form-label">Pontuação de Confiança</label>
+                        <input type="number" class="form-control" id="editPontuacaoConfianca" min="1" max="5">
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="editAtivaLoja">
+                        <label class="form-check-label" for="editAtivaLoja">Ativa</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Salvar Alterações</button>
                 </form>
             </div>
         </div>
@@ -182,40 +237,73 @@
         </div>
     </div>
 </div>
+
+<!-- Modal Editar Canal -->
+<div class="modal fade" id="editCanalModal" tabindex="-1" aria-labelledby="editCanalModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editCanalModalLabel">Editar Canal Telegram</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editCanalForm">
+                    <input type="hidden" id="editCanalId">
+                    <div class="mb-3">
+                        <label for="editNomeCanal" class="form-label">Nome Amigável</label>
+                        <input type="text" class="form-control" id="editNomeCanal" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editIdCanalApi" class="form-label">ID do Canal (API)</label>
+                        <input type="text" class="form-control" id="editIdCanalApi" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editInscritosCanal" class="form-label">Número de Inscritos</label>
+                        <input type="number" class="form-control" id="editInscritosCanal" min="0">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editTagsCanal" class="form-label">Tags Associadas (vírgula)</label>
+                        <input type="text" class="form-control" id="editTagsCanal">
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="editAtivoCanal">
+                        <label class="form-check-label" for="editAtivoCanal">Ativo</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts_extra %}
 <script>
     document.addEventListener("DOMContentLoaded", function() {
-        // Adicionar Tag
+        // ---------------- TAGS ----------------
         document.getElementById("addTagBtn").addEventListener("click", async function() {
             const newTagInput = document.getElementById("newTagInput");
             const tagName = newTagInput.value.trim().toLowerCase();
             if (tagName) {
                 const response = await fetch("/api/tags", {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ nome_tag: tagName })
                 });
                 const data = await response.json();
                 if (data.status === "success") {
-                    location.reload(); // Recarrega a página para mostrar a nova tag
+                    location.reload();
                 } else {
                     alert("Erro ao adicionar tag: " + data.message);
                 }
             }
         });
 
-        // Remover Tag
         document.querySelectorAll(".remove-tag-btn").forEach(button => {
             button.addEventListener("click", async function() {
                 const tagId = this.dataset.tagId;
                 if (confirm("Tem certeza que deseja remover esta tag?")) {
-                    const response = await fetch(`/api/tags/${tagId}`, {
-                        method: "DELETE"
-                    });
+                    const response = await fetch(`/api/tags/${tagId}`, { method: "DELETE" });
                     const data = await response.json();
                     if (data.status === "success") {
                         location.reload();
@@ -226,19 +314,18 @@
             });
         });
 
-        // Adicionar Loja
+        // ---------------- LOJAS: ADD ----------------
         document.getElementById("addLojaForm").addEventListener("submit", async function(event) {
             event.preventDefault();
             const formData = new FormData(this);
             const data = Object.fromEntries(formData.entries());
-            data.ativa = data.ativa === "on"; // Converte checkbox para boolean
+            data.ativa = data.ativa === "on"; // checkbox -> boolean
             data.pontuacao_confianca = parseInt(data.pontuacao_confianca);
+            if (!data.id_loja_api) delete data.id_loja_api; // opcional
 
             const response = await fetch("/api/lojas", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data)
             });
             const result = await response.json();
@@ -249,20 +336,82 @@
             }
         });
 
-        // Adicionar Canal
+        // ---------------- LOJAS: EDIT ----------------
+        const editLojaModal = new bootstrap.Modal(document.getElementById('editLojaModal'));
+
+        document.querySelectorAll(".edit-loja-btn").forEach(btn => {
+            btn.addEventListener("click", function() {
+                const tr = this.closest("tr");
+                const id = tr.dataset.lojaId;
+                const nome = tr.dataset.lojaNome;
+                const plataforma = tr.dataset.lojaPlataforma;
+                const pontuacao = tr.dataset.lojaPontuacao;
+                const ativa = tr.dataset.lojaAtiva === "1";
+                const idapi = tr.dataset.lojaIdapi;
+
+                document.getElementById("editLojaId").value = id;
+                document.getElementById("editNomeLoja").value = nome;
+                document.getElementById("editPlataformaLoja").value = plataforma;
+                document.getElementById("editPontuacaoConfianca").value = pontuacao;
+                document.getElementById("editAtivaLoja").checked = ativa;
+                document.getElementById("editIdLojaApi").value = idapi || "";
+
+                editLojaModal.show();
+            });
+        });
+
+        document.getElementById("editLojaForm").addEventListener("submit", async function(e) {
+            e.preventDefault();
+            const id = document.getElementById("editLojaId").value;
+            const payload = {
+                nome_loja: document.getElementById("editNomeLoja").value.trim(),
+                plataforma: document.getElementById("editPlataformaLoja").value,
+                id_loja_api: document.getElementById("editIdLojaApi").value.trim() || null,
+                pontuacao_confianca: parseInt(document.getElementById("editPontuacaoConfianca").value),
+                ativa: document.getElementById("editAtivaLoja").checked
+            };
+            const resp = await fetch(`/api/lojas/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+            if (data.status === "success") {
+                location.reload();
+            } else {
+                alert("Erro ao atualizar loja: " + data.message);
+            }
+        });
+
+        // ---------------- LOJAS: DELETE ----------------
+        document.querySelectorAll(".delete-loja-btn").forEach(btn => {
+            btn.addEventListener("click", async function() {
+                const tr = this.closest("tr");
+                const id = tr.dataset.lojaId;
+                if (confirm("Tem certeza que deseja remover esta loja?")) {
+                    const resp = await fetch(`/api/lojas/${id}`, { method: "DELETE" });
+                    const data = await resp.json();
+                    if (data.status === "success") {
+                        location.reload();
+                    } else {
+                        alert("Erro ao remover loja: " + data.message);
+                    }
+                }
+            });
+        });
+
+        // ---------------- CANAIS: ADD ----------------
         document.getElementById("addCanalForm").addEventListener("submit", async function(event) {
             event.preventDefault();
             const formData = new FormData(this);
             const data = Object.fromEntries(formData.entries());
             data.ativo = data.ativo === "on";
             data.inscritos = parseInt(data.inscritos);
-            data.tags_associadas = data.tags_associadas.split(",").map(tag => tag.trim()).filter(tag => tag.length > 0);
+            data.tags_associadas = (data.tags_associadas || "").split(",").map(tag => tag.trim()).filter(tag => tag.length > 0);
 
             const response = await fetch("/api/canais", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data)
             });
             const result = await response.json();
@@ -272,8 +421,71 @@
                 alert("Erro ao adicionar canal: " + result.message);
             }
         });
+
+        // ---------------- CANAIS: EDIT ----------------
+        const editCanalModal = new bootstrap.Modal(document.getElementById('editCanalModal'));
+
+        document.querySelectorAll(".edit-canal-btn").forEach(btn => {
+            btn.addEventListener("click", function() {
+                const tr = this.closest("tr");
+                const id = tr.dataset.canalId;
+                const nome = tr.dataset.canalNome;
+                const idapi = tr.dataset.canalIdapi;
+                const inscritos = tr.dataset.canalInscritos;
+                const ativo = tr.dataset.canalAtivo === "1";
+                const tags = tr.dataset.canalTags || "";
+
+                document.getElementById("editCanalId").value = id;
+                document.getElementById("editNomeCanal").value = nome;
+                document.getElementById("editIdCanalApi").value = idapi;
+                document.getElementById("editInscritosCanal").value = inscritos;
+                document.getElementById("editAtivoCanal").checked = ativo;
+                document.getElementById("editTagsCanal").value = tags;
+
+                editCanalModal.show();
+            });
+        });
+
+        document.getElementById("editCanalForm").addEventListener("submit", async function(e) {
+            e.preventDefault();
+            const id = document.getElementById("editCanalId").value;
+            const payload = {
+                nome_amigavel: document.getElementById("editNomeCanal").value.trim(),
+                id_canal_api: document.getElementById("editIdCanalApi").value.trim(),
+                inscritos: parseInt(document.getElementById("editInscritosCanal").value || "0"),
+                ativo: document.getElementById("editAtivoCanal").checked,
+                tags_associadas: (document.getElementById("editTagsCanal").value || "")
+                                  .split(",").map(t => t.trim()).filter(t => t.length > 0)
+            };
+            const resp = await fetch(`/api/canais/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+            if (data.status === "success") {
+                location.reload();
+            } else {
+                alert("Erro ao atualizar canal: " + data.message);
+            }
+        });
+
+        // ---------------- CANAIS: DELETE ----------------
+        document.querySelectorAll(".delete-canal-btn").forEach(btn => {
+            btn.addEventListener("click", async function() {
+                const tr = this.closest("tr");
+                const id = tr.dataset.canalId;
+                if (confirm("Tem certeza que deseja remover este canal?")) {
+                    const resp = await fetch(`/api/canais/${id}`, { method: "DELETE" });
+                    const data = await resp.json();
+                    if (data.status === "success") {
+                        location.reload();
+                    } else {
+                        alert("Erro ao remover canal: " + data.message);
+                    }
+                }
+            });
+        });
     });
 </script>
 {% endblock %}
-
-
