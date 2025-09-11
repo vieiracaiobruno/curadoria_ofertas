@@ -6,3 +6,7 @@ requests==2.31.0
 beautifulsoup4==4.12.2
 python-dotenv==1.0.0
 Werkzeug==2.3.7
+selenium==4.15.2
+undetected-chromedriver==3.5.4
+webdriver-manager==4.0.1
+setuptools==80.9.0

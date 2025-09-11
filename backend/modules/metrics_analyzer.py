@@ -7,13 +7,15 @@ import random # Para simular vendas
 
 from ..models.models import Oferta, MetricaOferta
 from ..db.database import DATABASE_URL, Base
+from backend.utils.config import get_config
 
 # Configuração do banco de dados
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Configurações de API (Substitua pelos seus tokens reais)
-BITLY_ACCESS_TOKEN = "SEU_BITLY_ACCESS_TOKEN"
+#BITLY_ACCESS_TOKEN = "SEU_BITLY_ACCESS_TOKEN"
+BITLY_ACCESS_TOKEN = get_config("BITLY_ACCESS_TOKEN")  # era string fixa
 
 class MetricsAnalyzer:
     def __init__(self, db_session):

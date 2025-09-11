@@ -53,7 +53,19 @@
                         <a class="nav-link {% if request.endpoint == 'publicadas' %}active{% endif %}" href="{{ url_for('publicadas') }}">Ofertas</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'lista_produtos' %}active{% endif %}"
+                            href="{{ url_for('lista_produtos') }}">
+                            Produtos
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'configuracoes' %}active{% endif %}" href="{{ url_for('configuracoes') }}">Configurações</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'variaveis' %}active{% endif %}"
+                            href="{{ url_for('variaveis') }}">
+                            Variáveis
+                        </a>
                     </li>
                 </ul>
                 <ul class="navbar-nav">

@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Variáveis de Configuração{% endblock %}
+
+{% block head_extra %}
+<style>
+  .secret-badge { font-size: .75rem; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New",monospace; }
+  /* remove a linha entre a tr principal e a tr da descrição */
+  .env-table tbody tr.env-main-row td { border-bottom: 0 !important; }
+  .env-table tbody tr.env-desc-row td { border-top: 0 !important; padding-top: .25rem; font-size: .875rem; color: #6c757d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Variáveis de Configuração</h1>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <form id="form-create" class="row g-2">
+      <div class="col-md-3">
+        <label class="form-label">Chave</label>
+        <input class="form-control" name="key" placeholder="Ex: TELEGRAM_BOT_TOKEN" required>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label">Valor</label>
+        <input class="form-control" name="value" placeholder="Valor (texto)">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Secreta?</label>
+        <select class="form-select" name="is_secret">
+          <option value="true" selected>Sim</option>
+          <option value="false">Não</option>
+        </select>
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button class="btn btn-primary w-100" type="submit"><i class="bi bi-plus-lg"></i> Incluir</button>
+      </div>
+      <div class="col-12">
+        <label class="form-label mt-2">Descrição</label>
+        <input class="form-control" name="description" placeholder="Dica/uso desta variável (opcional)">
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table align-middle env-table">
+    <thead>
+      <tr>
+        <th style="width:22%">Key</th>
+        <th>Valor</th>
+        <th style="width:12%">Secreta</th>
+        <th style="width:20%">Atualizado</th>
+        <th style="width:16%"></th>
+      </tr>
+    </thead>
+    <tbody id="env-tbody"></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+async function loadData() {
+  const r = await fetch("/api/env");
+  const data = await r.json();
+  const tbody = document.getElementById("env-tbody");
+  tbody.innerHTML = "";
+
+  (data.items || []).forEach(item => {
+    // Linha principal
+    const trMain = document.createElement("tr");
+    trMain.className = "env-main-row";
+    trMain.dataset.id = item.id;
+    trMain.innerHTML = `
+      <td class="mono align-middle">
+        <input class="form-control form-control-sm key-input" value="${item.key}">
+      </td>
+      <td class="align-middle">
+        <input class="form-control form-control-sm value-input" value="${item.value ?? ""}" ${item.is_secret ? 'placeholder="(segredo oculto)"' : ''}>
+      </td>
+      <td class="align-middle">
+        <select class="form-select form-select-sm secret-input">
+          <option value="true" ${item.is_secret ? "selected":""}>Sim</option>
+          <option value="false" ${!item.is_secret ? "selected":""}>Não</option>
+        </select>
+      </td>
+      <td class="align-middle"><span class="small text-muted">${new Date(item.updated_at).toLocaleString()}</span></td>
+      <td class="text-end align-middle">
+        <button class="btn btn-sm btn-success me-2 btn-save"><i class="bi bi-check2-circle"></i> Salvar</button>
+        <button class="btn btn-sm btn-outline-danger btn-del"><i class="bi bi-trash"></i></button>
+      </td>`;
+    tbody.appendChild(trMain);
+
+    // Linha de descrição (opcional)
+    const desc = (item.description || "").trim();
+    if (desc) {
+      const trDesc = document.createElement("tr");
+      trDesc.className = "env-desc-row";
+      trDesc.dataset.parentId = item.id;
+      trDesc.innerHTML = `<td colspan="5"><div>Descrição: ${desc}</div></td>`;
+      tbody.appendChild(trDesc);
+    }
+  });
+
+  bindRowEvents();
+}
+
+function bindRowEvents() {
+  document.querySelectorAll(".btn-save").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      // Busca sempre na linha principal (inputs)
+      const tr = e.target.closest("tr");
+      const id = tr.dataset.id;
+      const key = tr.querySelector(".key-input").value.trim();
+      const value = tr.querySelector(".value-input").value;
+      const is_secret = tr.querySelector(".secret-input").value === "true";
+      const payload = { key, value, is_secret };
+      const r = await fetch(`/api/env/${id}`, { method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
+      const j = await r.json();
+      if (j.status === "success") {
+        location.reload();
+      } else {
+        alert("Erro ao salvar: " + (j.message || r.statusText));
+      }
+    });
+  });
+
+  document.querySelectorAll(".btn-del").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const tr = e.target.closest("tr");
+      const id = tr.dataset.id;
+      if (!confirm("Confirma remover esta variável?")) return;
+      const r = await fetch(`/api/env/${id}`, { method:"DELETE" });
+      const j = await r.json();
+      if (j.status === "success") {
+        // remove a principal e a descrição logo abaixo (se existir)
+        const next = tr.nextElementSibling;
+        tr.remove();
+        if (next && next.classList.contains("env-desc-row")) next.remove();
+      } else {
+        alert("Erro ao apagar: " + (j.message || r.statusText));
+      }
+    });
+  });
+}
+
+document.getElementById("form-create").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = {
+    key: fd.get("key"),
+    value: fd.get("value"),
+    is_secret: (fd.get("is_secret") === "true"),
+    description: fd.get("description")
+  };
+  const r = await fetch("/api/env", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
+  const j = await r.json();
+  if (j.status === "success") {
+    e.target.reset();
+    loadData();
+  } else {
+    alert("Erro ao incluir: " + (j.message || r.statusText));
+  }
+});
+
+document.addEventListener("DOMContentLoaded", loadData);
+</script>
+{% endblock %}

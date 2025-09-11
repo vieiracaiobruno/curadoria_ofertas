@@ -9,14 +9,20 @@ load_dotenv('config.env')
 
 # DB e Models (use SEMPRE os objetos do database.py)
 from backend.db.database import SessionLocal, engine, create_db_tables
-from backend.models.models import Usuario, Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, MetricaOferta
+#from backend.models.models import Usuario, Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, MetricaOferta
+from backend.models.models import Usuario, Oferta, LojaConfiavel, Tag, CanalTelegram, Produto
 from backend.utils.auth import hash_password, check_password
+from sqlalchemy.orm import joinedload, selectinload
+import unicodedata, re
 
-app = Flask(__name__, template_folder='./frontend/templates', static_folder='./frontend/static')
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "sua_chave_secreta_aqui_para_producao")
+from backend.utils.config import get_config
 
 # Garantir as tabelas uma ÚNICA vez, usando o bootstrap centralizado do database.py
 create_db_tables()
+
+app = Flask(__name__, template_folder='./frontend/templates', static_folder='./frontend/static')
+#app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "sua_chave_secreta_aqui_para_producao")
+app.config["SECRET_KEY"] = get_config("SECRET_KEY", "sua_chave_secreta_aqui_para_producao")  # :contentReference[oaicite:10]{index=10}
 
 # Login
 login_manager = LoginManager()
@@ -70,13 +76,49 @@ def logout():
     flash("Você foi desconectado.", "info")
     return redirect(url_for("login"))
 
+def _norm(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", s)
+
+def _compile_pat(token: str):
+    if len(token) <= 3 and re.fullmatch(r"[a-z0-9]+", token or ""):
+        return re.compile(rf"(?<!\w){re.escape(token)}(?!\w)", re.I)
+    return re.compile(re.escape(token), re.I)
+
 @app.route("/")
 @app.route("/dashboard")
 @login_required
 def dashboard():
     with SessionLocal() as db:
-        ofertas_pendentes = db.query(Oferta).filter(Oferta.status == "PENDENTE_APROVACAO").all()
-    return render_template("fila_aprovacao.html", ofertas=ofertas_pendentes)
+        ofertas = (
+            db.query(Oferta)
+              .options(
+                  joinedload(Oferta.produto).selectinload(Produto.tags),
+                  joinedload(Oferta.loja),
+              )
+              .filter(Oferta.status == "PENDENTE_APROVACAO")
+              .all()
+        )
+        todas_tags = db.query(Tag).order_by(Tag.nome_tag).all()
+
+        # pré-compila padrões das tags
+        pats = []
+        for t in todas_tags:
+            nt = _norm(t.nome_tag)
+            if not nt: continue
+            pats.append((t, _compile_pat(nt)))
+
+        # anota no objeto uma lista de tags "filtradas" (só para a view)
+        for of in ofertas:
+            name_norm = _norm(of.produto.nome_produto)
+            matched = [t for t, pat in pats if pat.search(name_norm)]
+            of._prefilter_tags = matched  # atributo ad-hoc para a view
+
+    return render_template("fila_aprovacao.html",
+                           ofertas=ofertas,
+                           todas_tags=todas_tags)
 
 @app.route("/publicadas")
 @login_required
@@ -92,7 +134,9 @@ def configuracoes():
     with SessionLocal() as db:
         lojas = db.query(LojaConfiavel).all()
         tags = db.query(Tag).all()
-        canais = db.query(CanalTelegram).all()
+        canais = (db.query(CanalTelegram)
+                    .options(joinedload(CanalTelegram.tags))
+                    .all())
     return render_template("configuracoes.html", lojas=lojas, tags=tags, canais=canais)
 
 # Registrar blueprint da API
@@ -102,9 +146,9 @@ app.register_blueprint(api_bp, url_prefix="/api")
 # Rota para adicionar um usuário admin inicial (apenas para setup)
 @app.route("/setup_admin")
 def setup_admin():
-    admin_username = os.getenv("ADMIN_USERNAME", "admin")
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
-    admin_password = os.getenv("ADMIN_PASSWORD", "admin_password")
+    admin_username = get_config("ADMIN_USERNAME", "admin")        # :contentReference[oaicite:11]{index=11}
+    admin_email    = get_config("ADMIN_EMAIL", "admin@example.com")
+    admin_password = get_config("ADMIN_PASSWORD", "admin_password")
 
     with SessionLocal() as db:
         if not db.query(Usuario).filter_by(username=admin_username).first():
@@ -119,6 +163,26 @@ def setup_admin():
             db.commit()
             return "Usuário admin criado com sucesso!", 200
     return "Usuário admin já existe.", 200
+
+@app.route("/produtos")
+@login_required
+def lista_produtos():
+    with SessionLocal() as db:
+        produtos = (
+            db.query(Produto)
+              .options(
+                  selectinload(Produto.tags),
+                  selectinload(Produto.historico_precos),
+                  selectinload(Produto.ofertas),
+              )
+              .all()
+        )
+    return render_template("produtos.html", produtos=produtos)
+
+@app.route("/variaveis")
+@login_required
+def variaveis():
+    return render_template("env_vars.html")
 
 if __name__ == "__main__":
     # Garante tabelas e cria admin se necessário
@@ -141,8 +205,10 @@ if __name__ == "__main__":
             db.commit()
             print(f"Usuário admin inicial '{admin_username}' criado.")
 
-    app.run(
-        debug=os.getenv("FLASK_DEBUG", "True").lower() == "true",
-        host="0.0.0.0",
-        port=5000
-    )
+    #app.run(
+    #    #debug=os.getenv("FLASK_DEBUG", "True").lower() == "true",
+    #    host="0.0.0.0",
+    #    port=5000
+    #)
+    debug_flag = (get_config("FLASK_DEBUG", "True") or "True").lower() == "true"
+    app.run(debug=debug_flag, host="0.0.0.0", port=5000)

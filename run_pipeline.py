@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Pipeline completo de curadoria de ofertas
-- Com passo de login no Mercado Livre (cookies reutilizáveis)
+Pipeline de curadoria de ofertas
+- Login no Mercado Livre com Selenium (Chrome + webdriver-manager)
+- Sequência de login com desafios opcionais:
+    email -> captcha#1? -> senha -> captcha#2? -> qr/2FA?
+- Sem input(); usa esperas automáticas
+- Cookies reutilizáveis em ml_cookies.json
 """
 
 import os
 import sys
 import json
 import logging
-import requests
-from datetime import datetime, timedelta
+import time
+import datetime
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
-# Adiciona o diretório raiz do projeto ao sys.path (ajuste se necessário)
+# ------------------------------------------------------------------
+# Ajuste sys.path de acordo com sua estrutura
+# ------------------------------------------------------------------
 project_root = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, project_root)
 
-# Ajuste estes imports conforme a sua estrutura de pastas
 from backend.db.database import SessionLocal
 from backend.models.models import Usuario, Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, MetricaOferta, HistoricoPreco
 from backend.modules.collector import Collector
@@ -25,21 +32,30 @@ from backend.modules.validator import Validator
 from backend.modules.publisher import Publisher
 from backend.modules.metrics_analyzer import MetricsAnalyzer
 
-# -----------------------------------------------------------------------------
-# Configuração de logging
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("./logs/pipeline.log"),
-        logging.StreamHandler()
-    ]
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("./logs/pipeline.log"), logging.StreamHandler()],
 )
 
-# -----------------------------------------------------------------------------
-# Utilitários de cookies/login ML
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Selenium (Chrome + webdriver-manager)
+# ------------------------------------------------------------------
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+
+
+# ------------------------------------------------------------------
+# Utils: cookies + waits
+# ------------------------------------------------------------------
 def _load_cookies_from_file(cookies_file: str):
     if not os.path.exists(cookies_file):
         return None, None
@@ -51,87 +67,136 @@ def _load_cookies_from_file(cookies_file: str):
     except Exception:
         return None, None
 
+
 def _save_cookies_to_file(selenium_cookies: list, cookies_file: str):
-    payload = {
-        "created_at": datetime.utcnow().isoformat(),
-        "cookies": []
-    }
+    payload = {"created_at": datetime.datetime.now(datetime.UTC).isoformat(), "cookies": []}
     for c in selenium_cookies:
-        payload["cookies"].append({
-            "name": c.get("name"),
-            "value": c.get("value"),
-            "domain": c.get("domain", ".mercadolivre.com.br"),
-            "path": c.get("path", "/"),
-            "expiry": c.get("expiry"),
-            "secure": c.get("secure", True),
-            "httpOnly": c.get("httpOnly", False),
-        })
+        payload["cookies"].append(
+            {
+                "name": c.get("name"),
+                "value": c.get("value"),
+                "domain": c.get("domain", ".mercadolivre.com.br"),
+                "path": c.get("path", "/"),
+                "expiry": c.get("expiry"),
+                "secure": c.get("secure", True),
+                "httpOnly": c.get("httpOnly", False),
+            }
+        )
     os.makedirs(os.path.dirname(cookies_file) or ".", exist_ok=True)
     with open(cookies_file, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
-def _add_cookies_to_requests_session(sess: requests.Session, cookies: list):
-    for c in cookies:
-        kwargs = {
-            "name": c.get("name"),
-            "value": c.get("value"),
-            "domain": c.get("domain", ".mercadolivre.com.br"),
-            "path": c.get("path", "/"),
-        }
-        if c.get("expiry") is not None:
-            kwargs["expires"] = c.get("expiry")
-        sess.cookies.set(**kwargs)
 
-def _selenium_login_and_get_cookies(email: str, password: str, headless: bool = True) -> list:
-    """
-    Abre navegador, faz login no ML e retorna cookies (lista de dicts no formato selenium).
-    Se houver 2FA/CAPTCHA, rode headless=False e conclua manualmente; os cookies serão capturados.
-    """
-    try:
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        import undetected_chromedriver as uc
-    except Exception as e:
-        raise RuntimeError(
-            "Dependências para login não instaladas. Rode:\n"
-            "  pip install selenium undetected-chromedriver webdriver-manager"
-        ) from e
-
-    options = uc.ChromeOptions()
+def _build_driver(headless: bool):
+    options = ChromeOptions()
     if headless:
         options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--window-size=1280,1200")
     options.add_argument("--lang=pt-BR")
+    # silencia o warning de WebGL/software rasterizer
+    options.add_argument("--enable-unsafe-swiftshader")
+    service = ChromeService(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=options)
 
-    driver = uc.Chrome(options=options)
+
+def _inject_cookies(driver, cookies_file: str):
+    if not os.path.exists(cookies_file):
+        return
     try:
-        wait = WebDriverWait(driver, 30)
-        #driver.get("https://www.mercadolivre.com.br/hub/identity-login")
+        with open(cookies_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        cookies = data.get("cookies", [])
+    except Exception:
+        cookies = []
+    if not cookies:
+        return
+    driver.get("https://www.mercadolivre.com.br/")
+    for c in cookies:
+        try:
+            cookie = {"name": c.get("name"), "value": c.get("value"), "path": c.get("path", "/")}
+            dom = c.get("domain", ".mercadolivre.com.br")
+            try:
+                cookie["domain"] = dom
+                if c.get("expiry") is not None:
+                    cookie["expiry"] = int(c["expiry"])
+                driver.add_cookie(cookie)
+            except Exception:
+                cookie.pop("domain", None)
+                driver.add_cookie(cookie)
+        except Exception:
+            pass
+
+
+def _looks_logged_in(driver) -> bool:
+    try:
+        driver.get("https://www.mercadolivre.com.br/")
+        time.sleep(1.2)
+        page = driver.page_source.lower()
+        print("looks_logged_in", "minha conta" in page, "sair" in page) # debug
+        return ("minha conta" in page) or ("sair" in page)
+    except Exception:
+        return False
+
+
+def _wait_until(fn_check, timeout_sec=180, poll_sec=1.0):
+    end = time.time() + timeout_sec
+    while time.time() < end:
+        try:
+            if fn_check():
+                return True
+        except Exception:
+            pass
+        time.sleep(poll_sec)
+    return False
+
+
+# ------------------------------------------------------------------
+# Login com sequência: email -> captcha1? -> senha -> captcha2? -> qr/2FA?
+# ------------------------------------------------------------------
+def _selenium_login_and_get_cookies(
+    email: str,
+    password: str,
+    headless: bool,
+    max_wait_captcha1: int,
+    max_wait_captcha2: int,
+    max_wait_qr: int,
+) -> list:
+    """
+    Fluxo sem input():
+      1) Goto https://www.mercadolivre.com/jms/mlb/lgz/login
+      2) Preenche e-mail e envia
+      3) Aguarda campo de senha (se houve CAPTCHA#1, você resolve na janela visível)
+      4) Preenche senha e envia
+      5) Aguarda sessão/redirect (se houver CAPTCHA#2 ou QR/2FA, resolva durante a espera)
+    Observação: para interagir com captchas/QR, rode com ML_SELENIUM_HEADLESS=False.
+    """
+    driver = _build_driver(headless=headless)
+    wait = WebDriverWait(driver, 30)
+
+    try:
+        # 1) Login URL oficial (MLB)
         driver.get("https://www.mercadolivre.com/jms/mlb/lgz/login")
 
-        # Digita e envia e-mail
-        def type_email():
-            candidates = [
-                (By.ID, "user_id"),
-                (By.NAME, "user_id"),
-                (By.CSS_SELECTOR, "input[name='user_id']"),
-                (By.CSS_SELECTOR, "input[type='email']"),
-            ]
-            email_input = None
-            for by, sel in candidates:
-                try:
-                    email_input = wait.until(EC.presence_of_element_located((by, sel)))
-                    break
-                except Exception:
-                    continue
-            if not email_input:
-                return False
-            email_input.clear()
-            email_input.send_keys(email)
-            # botão "continuar"
+        # 2) E-mail
+        email_set = False
+        for by, sel in [
+            (By.ID, "user_id"),
+            (By.NAME, "user_id"),
+            (By.CSS_SELECTOR, "input[name='user_id']"),
+            (By.CSS_SELECTOR, "input[type='email']"),
+        ]:
+            try:
+                el = wait.until(EC.presence_of_element_located((by, sel)))
+                el.clear()
+                el.send_keys(email)
+                email_set = True
+                break
+            except Exception:
+                continue
+
+        if email_set:
             for by, sel in [
                 (By.CSS_SELECTOR, "button[type='submit']"),
                 (By.CSS_SELECTOR, "input[type='submit']"),
@@ -139,31 +204,35 @@ def _selenium_login_and_get_cookies(email: str, password: str, headless: bool = 
             ]:
                 try:
                     driver.find_element(by, sel).click()
-                    return True
-                except Exception:
-                    continue
-            return False
-
-        # Digita e envia senha
-        def type_password():
-            candidates = [
-                (By.ID, "password"),
-                (By.NAME, "password"),
-                (By.CSS_SELECTOR, "input[name='password']"),
-                (By.CSS_SELECTOR, "input[type='password']"),
-            ]
-            pwd_input = None
-            for by, sel in candidates:
-                try:
-                    pwd_input = WebDriverWait(driver, 20).until(EC.presence_of_element_located((by, sel)))
                     break
                 except Exception:
                     continue
-            if not pwd_input:
-                return False
-            pwd_input.clear()
-            pwd_input.send_keys(password)
-            # botão "entrar"
+
+        # 3) Espera campo de senha (CAPTCHA #1 pode aparecer nesse intervalo)
+        _wait_until(
+            lambda: bool(driver.find_elements(By.CSS_SELECTOR, "input[type='password'], input#password, input[name='password']")),
+            timeout_sec=max_wait_captcha1,
+            poll_sec=1.0,
+        )
+
+        # 4) Senha
+        pwd_set = False
+        for by, sel in [
+            (By.ID, "password"),
+            (By.NAME, "password"),
+            (By.CSS_SELECTOR, "input[name='password']"),
+            (By.CSS_SELECTOR, "input[type='password']"),
+        ]:
+            try:
+                el = WebDriverWait(driver, 20).until(EC.presence_of_element_located((by, sel)))
+                el.clear()
+                el.send_keys(password)
+                pwd_set = True
+                break
+            except Exception:
+                continue
+
+        if pwd_set:
             for by, sel in [
                 (By.ID, "action-complete"),
                 (By.CSS_SELECTOR, "button[type='submit']"),
@@ -171,37 +240,37 @@ def _selenium_login_and_get_cookies(email: str, password: str, headless: bool = 
             ]:
                 try:
                     driver.find_element(by, sel).click()
-                    return True
+                    break
                 except Exception:
                     continue
-            return False
 
-        type_email()
-        type_password()
+        # 5) Espera sessão/redirect (CAPTCHA #2 e/ou QR/2FA podem ocorrer aqui)
+        _wait_until(
+            lambda: (driver.current_url.startswith("https://www.mercadolivre.com.br/")),
+            timeout_sec=max_wait_captcha2 + max_wait_qr,
+            poll_sec=2.0,
+        )
 
-        # Espera redirect básico
-        driver.implicitly_wait(5)
+        # Verificação final
+        if not _looks_logged_in(driver):
+            driver.get("https://www.mercadolivre.com.br/")
+            _wait_until(lambda: _looks_logged_in(driver), timeout_sec=30, poll_sec=2.0)
 
         cookies = driver.get_cookies()
-        if not cookies and not headless:
-            logging.info("Aguardando login manual (2FA/CAPTCHA)… Você tem 90s.")
-            import time as _t
-            _t.sleep(90)
-            cookies = driver.get_cookies()
-
         return cookies
+
     finally:
         try:
             driver.quit()
         except Exception:
             pass
 
+
 def ensure_ml_login():
     """
-    Garante que exista uma sessão autenticada no Mercado Livre:
-    - Reutiliza cookies se ainda válidos (por idade)
-    - Caso contrário, roda login via Selenium e salva cookies
-    - Se ML_EMAIL/ML_PASSWORD não estiverem definidos, apenas registra aviso
+    Garante cookies válidos para o Mercado Livre:
+      - Reutiliza cookies se criados há menos que ML_LOGIN_REUSE_DAYS.
+      - Caso contrário, executa login com esperas automáticas para CAPTCHA/QR.
     """
     load_dotenv("config.env")
 
@@ -209,58 +278,54 @@ def ensure_ml_login():
     password = os.getenv("ML_PASSWORD", "").strip()
     cookies_file = os.getenv("ML_COOKIES_FILE", "./ml_cookies.json")
     reuse_days = int(os.getenv("ML_LOGIN_REUSE_DAYS", "14"))
-    headless = os.getenv("ML_SELENIUM_HEADLESS", "True").strip().lower() in ("1", "true", "yes")
+
+    headless = os.getenv("ML_SELENIUM_HEADLESS", "False").strip().lower() in ("1", "true", "yes")
+    # timeouts (segundos) para cada etapa opcional
+    max_wait_captcha1 = int(os.getenv("ML_MAX_WAIT_CAPTCHA1_SEC", "240"))
+    max_wait_captcha2 = int(os.getenv("ML_MAX_WAIT_CAPTCHA2_SEC", "240"))
+    max_wait_qr       = int(os.getenv("ML_MAX_WAIT_QR_SEC", "240"))
 
     if not email or not password:
         logging.warning("ML_EMAIL/ML_PASSWORD não configurados; seguindo sem login.")
         return
 
-    sess = requests.Session()
-    sess.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Connection": "close",
-    })
-
-    # Tenta reutilizar cookies
+    # 1) Reutiliza cookies
     created, cookies = _load_cookies_from_file(cookies_file)
-    if cookies and created and (datetime.utcnow() - created) < timedelta(days=reuse_days):
-        _add_cookies_to_requests_session(sess, cookies)
-        try:
-            r = sess.get("https://www.mercadolivre.com.br/", timeout=15)
-            if r.status_code == 200 and any(x in r.text for x in ("Minha conta", "Minha Conta", "Sair")):
-                logging.info("Cookies do Mercado Livre reutilizados com sucesso.")
-                return
-        except Exception:
-            pass
-        logging.info("Cookies existentes parecem inválidos; tentando novo login…")
-
-    # Login via Selenium
-    logging.info("Fazendo login no Mercado Livre via Selenium…")
-    selenium_cookies = _selenium_login_and_get_cookies(email, password, headless=headless)
-    if not selenium_cookies:
-        logging.warning("Não foi possível obter cookies via Selenium. Verifique credenciais/2FA.")
+    if cookies and created and (datetime.datetime.now(datetime.UTC) - created) < timedelta(days=reuse_days):
+        logging.info("Cookies do Mercado Livre reutilizados (ainda válidos).")
         return
-    _save_cookies_to_file(selenium_cookies, cookies_file)
+
+    # 2) Login completo
+    logging.info("Fazendo login no Mercado Livre com Selenium (CAPTCHA/QR opcionais).")
+    cookies = _selenium_login_and_get_cookies(
+        email=email,
+        password=password,
+        headless=headless,
+        max_wait_captcha1=max_wait_captcha1,
+        max_wait_captcha2=max_wait_captcha2,
+        max_wait_qr=max_wait_qr,
+    )
+
+    if not cookies:
+        logging.warning("Não foi possível capturar cookies de sessão.")
+        return
+
+    _save_cookies_to_file(cookies, cookies_file)
     logging.info("Login realizado e cookies salvos.")
 
-# -----------------------------------------------------------------------------
+
+# ------------------------------------------------------------------
 # Pipeline
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------
 def run_pipeline():
     db = SessionLocal()
     try:
         logging.info("=== Iniciando Pipeline de Curadoria de Ofertas ===")
 
-        # 0) Login ML (gera/valida cookies antes da coleta)
+        # 0) Login ML
         ensure_ml_login()
 
-        # 1) Coleta de dados
+        # 1) Coleta
         logging.info("Iniciando coleta de ofertas…")
         collector = Collector(db)
         collector.run_collection()
@@ -278,7 +343,7 @@ def run_pipeline():
         publisher.run_publication()
         logging.info("Publicação de ofertas concluída.")
 
-        # 4) Análise de Métricas (opcional)
+        # 4) Métricas
         logging.info("Iniciando análise de métricas…")
         metrics_analyzer = MetricsAnalyzer(db)
         metrics_analyzer.analyze_metrics()
@@ -286,7 +351,6 @@ def run_pipeline():
 
         db.commit()
         logging.info("=== Pipeline executado com sucesso ===")
-
     except Exception as e:
         db.rollback()
         logging.error(f"Erro durante a execução do pipeline: {e}", exc_info=True)
@@ -294,7 +358,7 @@ def run_pipeline():
     finally:
         db.close()
 
+
 if __name__ == "__main__":
-    # Carrega .env cedo para logs/pastas etc se você precisar
     load_dotenv("config.env")
     run_pipeline()

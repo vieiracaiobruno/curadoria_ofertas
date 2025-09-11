@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Table, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -136,3 +136,18 @@ class OfertaPublicada(Base):
 
     oferta = relationship("Oferta")
     canal = relationship("CanalTelegram", back_populates="ofertas_publicadas")
+
+class ConfigVar(Base):
+    __tablename__ = "config_vars"
+    __table_args__ = {'extend_existing': True}
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_config_vars_key"),
+        {'extend_existing': True}
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, nullable=False)           # ex: "TELEGRAM_BOT_TOKEN"
+    value = Column(String, nullable=True)          # valor em texto (encriptação opcional depois)
+    is_secret = Column(Boolean, default=True, nullable=False)
+    description = Column(String, nullable=True)    # dica/ajuda na UI
+    updated_at = Column(DateTime, default=datetime.now, nullable=False)

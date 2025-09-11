@@ -85,32 +85,32 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for canal in canais %}
-                        <tr data-canal-id="{{ canal.id }}"
-                            data-canal-nome="{{ canal.nome_amigavel }}"
-                            data-canal-idapi="{{ canal.id_canal_api }}"
-                            data-canal-inscritos="{{ canal.inscritos }}"
-                            data-canal-ativo="{{ 1 if canal.ativo else 0 }}"
-                            data-canal-tags="{{ canal.tags | map(attribute='nome_tag') | join(',') }}"
-                            <td>{{ canal.nome_amigavel }}</td>
-                            <td>{{ canal.id_canal_api }}</td>
-                            <td>
-                                {% for tag in canal.tags %}
-                                <span class="badge bg-info text-dark me-1">#{{ tag.nome_tag }}</span>
-                                {% endfor %}
-                            </td>
-                            <td>{{ canal.inscritos }}</td>
-                            <td>
-                                <div class="form-check form-switch">
-                                    <input class="form-check-input" type="checkbox" role="switch" id="canalSwitch{{ canal.id }}" {% if canal.ativo %}checked{% endif %} disabled>
-                                </div>
-                            </td>
-                            <td>
-                                <button class="btn btn-sm btn-info edit-canal-btn" title="Editar"><i class="bi bi-pencil"></i></button>
-                                <button class="btn btn-sm btn-danger delete-canal-btn" title="Remover"><i class="bi bi-trash"></i></button>
-                            </td>
-                        </tr>
+                    {% for canal in canais %}
+                    <tr data-canal-id="{{ canal.id }}"
+                        data-canal-nome="{{ canal.nome_amigavel }}"
+                        data-canal-idapi="{{ canal.id_canal_api }}"
+                        data-canal-inscritos="{{ canal.inscritos }}"
+                        data-canal-ativo="{{ 1 if canal.ativo else 0 }}"
+                        data-canal-tags="{{ canal.tags | map(attribute='nome_tag') | join(',') }}">
+                        <td>{{ canal.nome_amigavel }}</td>
+                        <td>{{ canal.id_canal_api }}</td>
+                        <td>
+                        {% for tag in canal.tags %}
+                        <span class="badge bg-info text-dark me-1">#{{ tag.nome_tag }}</span>
                         {% endfor %}
+                        </td>
+                        <td>{{ canal.inscritos }}</td>
+                        <td>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="canalSwitch{{ canal.id }}" {% if canal.ativo %}checked{% endif %} disabled>
+                        </div>
+                        </td>
+                        <td>
+                        <button class="btn btn-sm btn-info edit-canal-btn" title="Editar"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-danger delete-canal-btn" title="Remover"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                    {% endfor %}
                     </tbody>
                 </table>
                 <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCanalModal">Adicionar Canal</button>
@@ -224,8 +224,13 @@
                         <input type="number" class="form-control" id="inscritosCanal" name="inscritos" value="0">
                     </div>
                     <div class="mb-3">
-                        <label for="tagsCanal" class="form-label">Tags Associadas (separadas por vírgula)</label>
-                        <input type="text" class="form-control" id="tagsCanal" name="tags_associadas">
+                        <label for="tagsCanalSelect" class="form-label">Tags Associadas</label>
+                        <select id="tagsCanalSelect" class="form-select" multiple size="6" name="tags_associadas">
+                            {% for tag in tags %}
+                            <option value="{{ tag.nome_tag }}">{{ tag.nome_tag }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Segure Ctrl/Cmd para selecionar várias tags.</div>
                     </div>
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" role="switch" id="ativoCanal" name="ativo" checked>
@@ -262,8 +267,13 @@
                         <input type="number" class="form-control" id="editInscritosCanal" min="0">
                     </div>
                     <div class="mb-3">
-                        <label for="editTagsCanal" class="form-label">Tags Associadas (vírgula)</label>
-                        <input type="text" class="form-control" id="editTagsCanal">
+                        <label for="editTagsCanalSelect" class="form-label">Tags Associadas</label>
+                        <select id="editTagsCanalSelect" class="form-select" multiple size="6">
+                            {% for tag in tags %}
+                            <option value="{{ tag.nome_tag }}">{{ tag.nome_tag }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Segure Ctrl/Cmd para selecionar várias tags.</div>
                     </div>
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" role="switch" id="editAtivoCanal">
@@ -406,8 +416,12 @@
             const formData = new FormData(this);
             const data = Object.fromEntries(formData.entries());
             data.ativo = data.ativo === "on";
-            data.inscritos = parseInt(data.inscritos);
-            data.tags_associadas = (data.tags_associadas || "").split(",").map(tag => tag.trim()).filter(tag => tag.length > 0);
+            data.inscritos = parseInt(data.inscritos || "0", 10);
+            // coleta <select multiple>
+            const sel = document.getElementById("tagsCanalSelect");
+            data.tags_associadas = Array.from(sel.selectedOptions)
+                                        .map(o => (o.value || "").trim().toLowerCase())
+                                        .filter(Boolean);
 
             const response = await fetch("/api/canais", {
                 method: "POST",
@@ -433,14 +447,20 @@
                 const idapi = tr.dataset.canalIdapi;
                 const inscritos = tr.dataset.canalInscritos;
                 const ativo = tr.dataset.canalAtivo === "1";
-                const tags = tr.dataset.canalTags || "";
+                const tagsStr = tr.dataset.canalTags || "";
+                const tagsArr = tagsStr.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
 
                 document.getElementById("editCanalId").value = id;
                 document.getElementById("editNomeCanal").value = nome;
                 document.getElementById("editIdCanalApi").value = idapi;
                 document.getElementById("editInscritosCanal").value = inscritos;
                 document.getElementById("editAtivoCanal").checked = ativo;
-                document.getElementById("editTagsCanal").value = tags;
+
+                // pré-seleciona no <select multiple>
+                const sel = document.getElementById("editTagsCanalSelect");
+                Array.from(sel.options).forEach(opt => {
+                opt.selected = tagsArr.includes((opt.value || "").toLowerCase());
+                });
 
                 editCanalModal.show();
             });
@@ -449,14 +469,20 @@
         document.getElementById("editCanalForm").addEventListener("submit", async function(e) {
             e.preventDefault();
             const id = document.getElementById("editCanalId").value;
+
+            const sel = document.getElementById("editTagsCanalSelect");
+            const tags = Array.from(sel.selectedOptions)
+                                .map(o => (o.value || "").trim().toLowerCase())
+                                .filter(Boolean);
+
             const payload = {
                 nome_amigavel: document.getElementById("editNomeCanal").value.trim(),
                 id_canal_api: document.getElementById("editIdCanalApi").value.trim(),
-                inscritos: parseInt(document.getElementById("editInscritosCanal").value || "0"),
+                inscritos: parseInt(document.getElementById("editInscritosCanal").value || "0", 10),
                 ativo: document.getElementById("editAtivoCanal").checked,
-                tags_associadas: (document.getElementById("editTagsCanal").value || "")
-                                  .split(",").map(t => t.trim()).filter(t => t.length > 0)
+                tags_associadas: tags   // substituição total (contrato da API)
             };
+
             const resp = await fetch(`/api/canais/${id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },

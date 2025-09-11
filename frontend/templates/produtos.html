@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Produtos{% endblock %}
+
+{% block head_extra %}
+<style>
+  .card-produto { transition: box-shadow .3s; }
+  .card-produto:hover { box-shadow: 0 .5rem 1rem rgba(0,0,0,.15); }
+  .product-image { max-width:100%; height:auto; max-height:150px; object-fit:contain; }
+  .tag { cursor: default; }
+
+  /* ====== Layouts ====== */
+  #produtos-container.grid-1 { display:block; }
+  #produtos-container.grid-5 {
+    display:grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 1rem;
+  }
+  #produtos-container.grid-5 .card-produto { margin-bottom: 0; }
+
+  /* ====== Compactação visual no modo 5 por linha ====== */
+  #produtos-container.grid-5 .card { border-radius: .5rem; }
+  #produtos-container.grid-5 .card-body { padding: .55rem .6rem; }
+
+  /* Título menor e com 2 linhas, cortando o resto */
+  #produtos-container.grid-5 .card-title {
+    font-size: .95rem;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: .25rem !important;
+  }
+
+  /* Texto secundário e meta infos menores */
+  #produtos-container.grid-5 .card-text small { font-size: .72rem; }
+  #produtos-container.grid-5 .text-muted.small { font-size: .72rem !important; }
+
+  /* Badges de tags menores */
+  #produtos-container.grid-5 .badge { font-size: .65rem; padding: .25rem .35rem; }
+
+  /* Botões compactos */
+  #produtos-container.grid-5 .btn { padding: .25rem .4rem; font-size: .75rem; }
+  #produtos-container.grid-5 .d-flex.justify-content-end.gap-2.mt-3 { margin-top: .5rem !important; }
+
+  /* Imagem menor; coloca imagem em cima e texto abaixo para caber melhor */
+  #produtos-container.grid-5 .product-image { max-height: 90px; }
+  #produtos-container.grid-5 .row.g-0 { display:block; }
+  #produtos-container.grid-5 .row.g-0 > .col-md-2,
+  #produtos-container.grid-5 .row.g-0 > .col-md-10 { width: 100%; max-width: 100%; flex: 0 0 100%; }
+  #produtos-container.grid-5 .row.g-0 > .col-md-2 { padding: .6rem !important; }
+
+  /* Em telas pequenas, sempre 1 por linha (mesmo no modo 5) */
+  @media (max-width: 768px) {
+    #produtos-container.grid-5 { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Produtos (<span id="contador-produtos">{{ produtos|length }}</span>)</h1>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="btn-group btn-group-sm" role="group" aria-label="Layout">
+    <button id="layout-1" class="btn btn-outline-secondary">1 por linha</button>
+    <button id="layout-5" class="btn btn-outline-secondary">5 por linha</button>
+  </div>
+</div>
+
+<div id="produtos-container">
+  {% if not produtos %}
+    <div class="alert alert-info" role="alert">
+      Nenhum produto cadastrado no momento.
+    </div>
+  {% endif %}
+
+  {% for produto in produtos %}
+  <div class="card card-produto mb-4" id="produto-{{ produto.id }}">
+    <div class="row g-0">
+      <div class="col-md-2 d-flex align-items-center justify-content-center p-3">
+        <img src="{{ produto.imagem_url or url_for('static', filename='placeholder.png') }}"
+             class="img-fluid rounded-start product-image"
+             alt="{{ produto.nome_produto }}">
+      </div>
+
+      <div class="col-md-10">
+        <div class="card-body">
+          <h5 class="card-title mb-1">{{ produto.nome_produto }}</h5>
+          <p class="card-text">
+            <small class="text-muted">
+              ID: {{ produto.id }} · ProductID Loja: {{ produto.product_id_loja }}
+            </small>
+          </p>
+
+          <p class="mb-1">
+            <a href="{{ produto.url_base }}" target="_blank" rel="noopener noreferrer">
+              Link original do produto
+            </a>
+          </p>
+
+          <div class="mb-2">
+            <span class="fw-bold">Tags:</span>
+            {% if produto.tags %}
+              {% for tag in produto.tags %}
+                <span class="badge bg-primary p-2 me-1 tag">#{{ tag.nome_tag }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </div>
+
+          <div class="text-muted small">
+            Histórico: {{ produto.historico_precos|length }} registro(s) ·
+            Ofertas: {{ produto.ofertas|length }}
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 mt-3">
+            <button class="btn btn-outline-secondary btn-manter" data-produto-id="{{ produto.id }}">
+              <i class="bi bi-check-circle"></i> Manter
+            </button>
+            <button class="btn btn-danger btn-excluir" data-produto-id="{{ produto.id }}">
+              <i class="bi bi-trash-fill"></i> Excluir
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const container = document.getElementById("produtos-container");
+    const btn1 = document.getElementById("layout-1");
+    const btn5 = document.getElementById("layout-5");
+
+    function applyMode(mode) {
+      container.classList.remove("grid-1","grid-5");
+      container.classList.add(mode);
+      // estado visual dos botões
+      [btn1, btn5].forEach(b => b?.classList.remove("btn-secondary","active"));
+      [btn1, btn5].forEach(b => b?.classList.add("btn-outline-secondary"));
+      if (mode === "grid-1") {
+        btn1?.classList.remove("btn-outline-secondary"); btn1?.classList.add("btn-secondary","active");
+      } else {
+        btn5?.classList.remove("btn-outline-secondary"); btn5?.classList.add("btn-secondary","active");
+      }
+    }
+
+    // preferencia salva ou default
+    const saved = localStorage.getItem("produtos.layout");
+    const initial = saved === "grid-5" ? "grid-5" : "grid-1";
+    applyMode(initial);
+
+    // listeners
+    btn1?.addEventListener("click", () => {
+      applyMode("grid-1");
+      localStorage.setItem("produtos.layout", "grid-1");
+    });
+    btn5?.addEventListener("click", () => {
+      applyMode("grid-5");
+      localStorage.setItem("produtos.layout", "grid-5");
+    });
+
+    function updateCounter() {
+      const n = document.querySelectorAll("#produtos-container .card-produto").length;
+      document.getElementById("contador-produtos").textContent = n;
+    }
+
+    // Botão Manter: apenas remove da visão (para triagem manual rápida)
+    document.querySelectorAll(".btn-manter").forEach(btn => {
+      btn.addEventListener("click", function () {
+        const id = this.dataset.produtoId;
+        const card = document.getElementById("produto-" + id);
+        if (card) {
+          card.remove();
+          updateCounter();
+        }
+      });
+    });
+
+    // Botão Excluir: chama DELETE na API e remove do DOM
+    document.querySelectorAll(".btn-excluir").forEach(btn => {
+      btn.addEventListener("click", async function () {
+        const id = this.dataset.produtoId;
+        if (!confirm("Excluir o produto #" + id + " e todos os dados relacionados? Esta ação não pode ser desfeita.")) {
+          return;
+        }
+        try {
+          const resp = await fetch(`/api/produtos/${id}`, { method: "DELETE" });
+          const data = await resp.json();
+          if (data.status === "success") {
+            const card = document.getElementById("produto-" + id);
+            if (card) card.remove();
+            updateCounter();
+          } else {
+            alert("Erro ao excluir: " + (data.message || "desconhecido"));
+          }
+        } catch (e) {
+          alert("Falha na requisição: " + e);
+        }
+      });
+    });
+  });
+</script>
+{% endblock %}
