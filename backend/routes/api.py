@@ -184,18 +184,23 @@ def api_agendar_oferta(oferta_id):
 @api_bp.route("/lojas", methods=["POST"])
 def api_add_loja():
     db = SessionLocal()
-    data = request.json
+    data = request.json or {}
     try:
         loja = LojaConfiavel(
-            nome_loja=data["nome_loja"],
-            plataforma=data["plataforma"],
-            id_loja_api=data.get("id_loja_api"),
-            pontuacao_confianca=data.get("pontuacao_confianca", 3),
-            ativa=data.get("ativa", True)
+            nome_loja=(data.get("nome_loja") or "").strip(),
+            plataforma=(data.get("plataforma") or "Mercado Livre").strip(),
+            id_loja_api=(data.get("id_loja_api") or "").strip(),
+            # se seu modelo já tiver a coluna extra, trate aqui; se não tiver, ignore esta linha
+            id_loja_api_alt=(data.get("id_loja_api_alt") or "").strip() or None,
+            pontuacao_confianca=int(data.get("pontuacao_confianca", 3)),
+            ativa=bool(data.get("ativa", True)),
         )
+        if not loja.nome_loja or not loja.plataforma:
+            return jsonify({"status": "error", "message": "nome_loja e plataforma são obrigatórios."}), 400
+
         db.add(loja)
         db.commit()
-        return jsonify({"status": "success", "message": "Loja adicionada com sucesso!"}), 201
+        return jsonify({"status": "success", "message": "Loja adicionada com sucesso!", "id": loja.id}), 201
     except Exception as e:
         db.rollback()
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -466,3 +471,180 @@ def api_delete_env(cfg_id: int):
         db.delete(row)
         db.commit()
     return jsonify({"status":"success"})
+
+@api_bp.route("/lojas/auto_from_produto/<int:produto_id>", methods=["POST"])
+def api_auto_create_loja_from_produto(produto_id):
+    """
+    Dado um produto (com url_base), resolve MLB-XXXX, tenta achar loja por id alternativo
+    e, se não existir, abre a página e cria a LojaConfiavel automaticamente.
+    """
+    from backend.modules.collector import Collector  # reusar lógica
+    db = SessionLocal()
+    try:
+        produto = db.get(Produto, produto_id)
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+
+        col = Collector(db)  # usa o mesmo BrowserManager/cookies
+        loja, alt = col._resolve_store_by_alt_or_scrape(produto.url_base)
+        col.browser.close()
+
+        if not loja:
+            return jsonify({"status": "error", "message": "Não foi possível identificar a loja pelo link do produto."}), 422
+
+        # grava alt no produto se ainda não tem
+        if alt and not produto.product_id_loja_alt:
+            produto.product_id_loja_alt = alt
+            db.commit()
+
+        data = {
+            "id": loja.id,
+            "nome_loja": loja.nome_loja,
+            "plataforma": loja.plataforma,
+            "id_loja_api": loja.id_loja_api,
+            "id_loja_api_alt": loja.id_loja_api_alt
+        }
+        return jsonify({"status": "success", "message": "Loja resolvida/registrada com sucesso.", "loja": data}), 200
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
+
+@api_bp.route("/tags", methods=["GET"])
+def api_list_tags():
+    db = SessionLocal()
+    try:
+        tags = db.query(Tag).order_by(Tag.nome_tag.asc()).all()
+        return jsonify({"status": "success", "tags": [t.nome_tag for t in tags]}), 200
+    finally:
+        db.close()
+
+@api_bp.route("/produtos/<int:produto_id>/tags", methods=["POST"])
+def api_add_tags_to_product(produto_id):
+    """
+    Associa tags EXISTENTES por nome ao produto. Não cria tags novas aqui.
+    body: {"tags": ["informatica","gamer"]}
+    """
+    db = SessionLocal()
+    try:
+        produto = db.get(Produto, produto_id)
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+
+        names = request.json.get("tags", []) or []
+        # pega só as que já existem
+        existentes = db.query(Tag).filter(Tag.nome_tag.in_(names)).all()
+        if not existentes:
+            return jsonify({"status": "error", "message": "Nenhuma das tags existe."}), 400
+
+        # atribui (sem duplicar)
+        for t in existentes:
+            if t not in produto.tags:
+                produto.tags.append(t)
+        db.commit()
+
+        # reprocessa para verificar elegibilidade de oferta
+        return _api_reprocess_single_product(produto_id)
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
+
+# helper reaproveitável
+def _api_reprocess_single_product(produto_id: int):
+    from backend.modules.collector import Collector
+    db2 = SessionLocal()
+    try:
+        produto2 = db2.get(Produto, produto_id)
+        if not produto2:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+
+        col = Collector(db2)
+
+        # tenta resolver a loja via MLB do link ou fallback (método que você já tem)
+        loja, _ = None, None
+        # se você já tiver _resolve_store_by_alt_or_scrape no Collector, use:
+        try:
+            loja, _ = col._resolve_store_by_alt_or_scrape(produto2.url_base)  # usa sua lógica de MLB/seller
+        except Exception:
+            loja = None
+
+        # re-scrape do produto para obter preço/descrição atualizados
+        pdata = col._scrape_mercadolivre_product(produto2.url_base)
+        # força os IDs do produto conhecidos (product_id_loja) dentro de pdata
+        pdata['product_id_loja'] = produto2.product_id_loja
+        pdata['url_base'] = produto2.url_base
+
+        created = col._save_product_and_offer(pdata, loja)
+        col.browser.close()
+
+        msg = "Produto reprocessado; oferta criada." if created else "Produto reprocessado; sem oferta elegível."
+        return jsonify({"status": "success", "message": msg}), 200
+
+    except Exception as e:
+        db2.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db2.close()
+
+@api_bp.route("/produtos/<int:produto_id>/reprocessar", methods=["POST"])
+def api_reprocess_product(produto_id):
+    return _api_reprocess_single_product(produto_id)
+
+@api_bp.route("/lojas/ativar_by_produto/<int:produto_id>", methods=["POST"])
+def api_ativar_loja_por_produto(produto_id: int):
+    """
+    Ativa (ativa=True) a loja já cadastrada relacionada ao produto via seller_id (product_id_loja)
+    ou id alternativo (product_id_loja_alt). NÃO cria nova loja. Se não encontrar, erro.
+    """
+    db = SessionLocal()
+    try:
+        produto = db.get(Produto, produto_id)
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+
+        seller_id = (produto.product_id_loja or "").strip()
+        alt_id = (produto.product_id_loja_alt or "").strip()
+
+        if not seller_id and not alt_id:
+            return jsonify({"status": "error", "message": "Produto não possui identificadores de loja."}), 422
+
+        q = db.query(LojaConfiavel)
+        from sqlalchemy import or_
+        loja = q.filter(
+            or_(
+                LojaConfiavel.id_loja_api == seller_id if seller_id else False,
+                LojaConfiavel.id_loja_api_alt == alt_id if alt_id else False
+            )
+        ).first()
+
+        if not loja:
+            return jsonify({"status": "error", "message": "Não há loja cadastrada para este produto."}), 404
+
+        if not loja.ativa:
+            loja.ativa = True
+        # garante campo lojaconfiavel=True se existir
+        if hasattr(loja, "lojaconfiavel") and loja.lojaconfiavel is False:
+            loja.lojaconfiavel = True
+
+        db.commit()
+        return jsonify({
+            "status": "success",
+            "message": "Loja ativada com sucesso.",
+            "loja": {
+                "id": loja.id,
+                "nome_loja": loja.nome_loja,
+                "id_loja_api": loja.id_loja_api,
+                "id_loja_api_alt": loja.id_loja_api_alt,
+                "ativa": loja.ativa
+            }
+        }), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()

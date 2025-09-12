@@ -39,10 +39,10 @@ class LojaConfiavel(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome_loja = Column(String, unique=True, nullable=False)
     plataforma = Column(String, nullable=False)
-    id_loja_api = Column(String, nullable=True)
+    id_loja_api = Column(String, nullable=True)  # seller_id
+    id_loja_api_alt = Column(String, unique=True, nullable=True)
     pontuacao_confianca = Column(Integer, default=3, nullable=False)
     ativa = Column(Boolean, default=True, nullable=False)
-
     historico_precos = relationship("HistoricoPreco", back_populates="loja")
     ofertas = relationship("Oferta", back_populates="loja")
 
@@ -71,11 +71,12 @@ class Produto(Base):
     __tablename__ = "produtos"
     __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
-    product_id_loja = Column(String, unique=True, nullable=False)
+    id_product = Column(String, unique=True, nullable=False)
+    product_id_loja = Column(String, nullable=False, index=True)
+    product_id_loja_alt = Column(String, nullable=True, index=True)
     nome_produto = Column(String, nullable=False)
     url_base = Column(String, nullable=False)
     imagem_url = Column(String, nullable=True)
-
     tags = relationship("Tag", secondary="produto_tags", back_populates="produtos")
     historico_precos = relationship("HistoricoPreco", back_populates="produto")
     ofertas = relationship("Oferta", back_populates="produto")

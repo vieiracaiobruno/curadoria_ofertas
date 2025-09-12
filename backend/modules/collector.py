@@ -1,565 +1,497 @@
-import os
+# -*- coding: utf-8 -*-
+"""
+Collector Mercado Livre:
+- SEMPRE faz scraping global das páginas de ofertas (ignora lojas cadastradas para buscar).
+- Salva/atualiza TODOS os Produtos SEM filtro.
+- Cria Oferta somente se:
+    * Loja (seller) já existir na tabela lojas_confiaveis (NÃO cria loja aqui)
+    * Passar filtro de tags (se houver tags e REQUIRE_DB_TAG_MATCH=true)
+    * Não existir oferta aberta mesma loja/produto/preço.
+"""
 import re
-import json
 import time
 from datetime import datetime
-from urllib.parse import urljoin, quote
+from typing import List, Dict, Optional
+from urllib.parse import unquote, urlparse, parse_qs
 
+import requests
 from bs4 import BeautifulSoup
+import unicodedata
+from sqlalchemy.exc import IntegrityError
 
-# =========================
-# Imports tolerantes à estrutura do projeto
-# =========================
+from backend.utils.config import get_config
+
 try:
-    from backend.models.models import (
-        Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag
-    )
-    from backend.db.database import SessionLocal
-except Exception:
-    try:
-        from ..models.models import (
-            Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag
-        )
-        from ..db.database import SessionLocal
-    except Exception:
-        try:
-            from models import (
-                Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag
-            )  # type: ignore
-        except Exception:
-            from model import (
-                Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag
-            )  # type: ignore
-        try:
-            from database import SessionLocal  # type: ignore
-        except Exception:
-            from db.database import SessionLocal  # type: ignore
-
-
-# =========================
-# Selenium (Chrome + webdriver-manager)
-# =========================
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-
-
-class BrowserManager:
-    """
-    Gerencia um único driver Chrome (Selenium), injeta cookies salvos e expõe métodos utilitários.
-    """
-    def __init__(self, headless: bool, cookies_file: str):
-        self.headless = headless
-        self.cookies_file = cookies_file
-        self._driver = None
-
-    def _build_driver(self):
-        options = ChromeOptions()
-        if self.headless:
-            options.add_argument("--headless=new")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--window-size=1280,1200")
-        options.add_argument("--lang=pt-BR")
-        service = ChromeService(ChromeDriverManager().install())
-        return webdriver.Chrome(service=service, options=options)
-
-    def _load_cookies_from_file(self):
-        if not os.path.exists(self.cookies_file):
-            return []
-        try:
-            with open(self.cookies_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return data.get("cookies", [])
-        except Exception:
-            return []
-
-    def _inject_cookies(self, driver):
-        cookies = self._load_cookies_from_file()
-        if not cookies:
-            return
-        # precisa estar no domínio correto para setar cookies
-        driver.get("https://www.mercadolivre.com.br/")
-        for c in cookies:
-            try:
-                cookie = {
-                    "name": c.get("name"),
-                    "value": c.get("value"),
-                    "path": c.get("path", "/"),
-                }
-                dom = c.get("domain", ".mercadolivre.com.br")
-                # alguns chromes não aceitam domain explícito; tentamos com e sem
-                try:
-                    cookie["domain"] = dom
-                    if c.get("expiry") is not None:
-                        cookie["expiry"] = int(c["expiry"])
-                    driver.add_cookie(cookie)
-                except Exception:
-                    cookie.pop("domain", None)
-                    driver.add_cookie(cookie)
-            except Exception:
-                pass
-
-    def get(self):
-        if self._driver is None:
-            self._driver = self._build_driver()
-            self._inject_cookies(self._driver)
-        return self._driver
-
-    def soup(self):
-        from bs4 import BeautifulSoup
-        return BeautifulSoup(self.get().page_source, "html.parser")
-
-    def wait(self, timeout=20):
-        return WebDriverWait(self.get(), timeout)
-
-    def close(self):
-        if self._driver:
-            try:
-                self._driver.quit()
-            except Exception:
-                pass
-            self._driver = None
-
-
-def _parse_csv_env(name: str):
-    raw = os.getenv(name, "").strip()
-    if not raw:
-        return set()
-    return {x.strip().lower() for x in raw.split(",") if x.strip()}
+    from backend.models.models import Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag
+except Exception:  # pragma: no cover
+    from ..models.models import Produto, Oferta, LojaConfiavel, HistoricoPreco, Tag  # type: ignore
 
 
 class Collector:
     def __init__(self, db_session):
-        self.db_session = db_session
+        self.db = db_session
+        self.max_pages = int(get_config("ML_MAX_PAGES", "2"))
+        self.delay_sec = float(get_config("ML_REQUEST_DELAY_SEC", "0.6"))
+        self.affiliate_template = (get_config("ML_AFFILIATE_TEMPLATE", "") or "").strip()
 
-        # Parâmetros
-        self.max_pages = int(os.getenv("ML_MAX_PAGES", "2"))
-        self.max_products_per_page = int(os.getenv("ML_MAX_PRODUCTS_PER_PAGE", "40"))
-        self.max_products_per_store = int(os.getenv("ML_MAX_PRODUCTS_PER_STORE", "120"))
-        self.delay_sec = float(os.getenv("ML_REQUEST_DELAY_SEC", "1.0"))
-        self.affiliate_template = os.getenv("ML_AFFILIATE_TEMPLATE", "").strip()
-
-        # Desconto mínimo
-        min_pct = os.getenv("ML_MIN_DISCOUNT_PCT")
-        if min_pct is not None and min_pct != "":
+        min_pct = get_config("ML_MIN_DISCOUNT_PCT")
+        if min_pct:
             self.min_discount_pct = float(min_pct)
         else:
-            real_disc = os.getenv("REAL_DISCOUNT")
+            real_disc = get_config("REAL_DISCOUNT")
             self.min_discount_pct = float(real_disc) * 100 if real_disc else 0.0
 
-        # Cookies + Headless
-        self.cookies_file = os.getenv("ML_COOKIES_FILE", "./ml_cookies.json")
-        headless_str = os.getenv("ML_SELENIUM_HEADLESS", "True").strip().lower()
-        self.headless = headless_str in ("1", "true", "yes")
+        self.require_db_tag_match = (get_config("REQUIRE_DB_TAG_MATCH", "true") or "true").lower() in {"1", "true", "yes", "y"}
+        self.auto_tag_on_collect = (get_config("AUTO_TAG_ON_COLLECT", "false") or "false").lower() in {"1", "true", "yes", "y"}
 
-        # Filtros (opcionais)
-        self.allow_tags = _parse_csv_env("ML_ALLOW_TAGS")
-        self.block_tags = _parse_csv_env("ML_BLOCK_TAGS")
-        self.allow_kw = _parse_csv_env("ML_ALLOW_KEYWORDS")
-        self.block_kw = _parse_csv_env("ML_BLOCK_KEYWORDS")
+        self._tags_norm = set()
+        self._tag_patterns: Dict[str, re.Pattern] = {}
+        self._tags_by_norm: Dict[str, Tag] = {}
+        self._load_db_tags_as_keywords()
 
         self.headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Chrome/139.0.0.0 Safari/537.36"
+            )
         }
 
-        self.tag_keywords = {
-            'informatica': ['notebook', 'computador', 'ssd', 'memória ram', 'memoria ram', 'processador',
-                            'monitor', 'teclado', 'mouse', 'placa de vídeo', 'placa de video'],
-            'gamer': ['gamer', 'rtx', 'geforce', 'radeon', 'console', 'playstation', 'xbox', 'nintendo', 'headset gamer'],
-            'celular': ['iphone', 'galaxy', 'xiaomi', 'motorola', 'smartphone', 'celular', 'android', 'ios'],
-            'eletrodomestico': ['geladeira', 'fogão', 'fogao', 'micro-ondas', 'microondas', 'air fryer', 'batedeira',
-                                'liquidificador', 'lava-louças', 'lava loucas', 'aspirador'],
-            'tv': ['tv', 'televisão', 'televisao', 'smart tv', 'qled', 'oled'],
-            'audio': ['fone', 'caixa de som', 'soundbar', 'bluetooth'],
-            'casa': ['cama', 'mesa', 'banho', 'sofa', 'armario', 'decoracao', 'utensilios'],
-            'esporte': ['tenis', 'roupa esportiva', 'bicicleta', 'fitness', 'suplemento'],
-            'livros': ['livro', 'e-book', 'ebook', 'literatura', 'ficcao', 'não ficção', 'nao ficcao'],
-            'brinquedos': ['brinquedo', 'boneca', 'carrinho', 'lego', 'jogo de tabuleiro', 'jogos de tabuleiro']
-        }
+    # ---------------- Tags ----------------
+    @staticmethod
+    def _normalize_text(s: str) -> str:
+        s = (s or "").strip().lower()
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not unicodedata.combining(ch))
+        return re.sub(r"\s+", " ", s)
 
-        self._open_statuses = {"PENDENTE_APROVACAO", "APROVADO", "AGENDADO", "PUBLICADO"}
+    def _compile_pattern_for_tag(self, norm_tag: str) -> re.Pattern:
+        if len(norm_tag) <= 3 and re.fullmatch(r"[a-z0-9]+", norm_tag):
+            pat = rf"(?<!\w){re.escape(norm_tag)}(?!\w)"
+        else:
+            pat = re.escape(norm_tag)
+        return re.compile(pat, re.IGNORECASE)
 
-        # Selenium browser
-        self.browser = BrowserManager(headless=self.headless, cookies_file=self.cookies_file)
-        self.driver = self.browser.get()
+    def _load_db_tags_as_keywords(self):
+        tags = self.db.query(Tag).all()
+        self._tags_norm.clear(); self._tag_patterns.clear(); self._tags_by_norm.clear()
+        for t in tags:
+            norm = self._normalize_text(t.nome_tag)
+            if not norm or norm in self._tags_norm:
+                continue
+            self._tags_norm.add(norm)
+            self._tag_patterns[norm] = self._compile_pattern_for_tag(norm)
+            self._tags_by_norm[norm] = t
+
+    def _match_db_tags_in_name(self, product_name: str) -> List[Tag]:
+        norm_name = self._normalize_text(product_name)
+        return [self._tags_by_norm[n] for n, pat in self._tag_patterns.items() if pat.search(norm_name)]
+
+    def _eligible_by_db_tags(self, product_name: str):
+        if not self._tags_norm:
+            return (not self.require_db_tag_match, [])
+        matched = self._match_db_tags_in_name(product_name)
+        return (len(matched) > 0, matched)
 
     # --------------- Utils ---------------
-
-    def _slugify(self, text: str) -> str:
-        import unicodedata
-        text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-        text = re.sub(r"[^a-zA-Z0-9\- ]+", "", text).strip().lower()
-        text = text.replace(" ", "-")
-        text = re.sub(r"-{2,}", "-", text)
-        return text
-
     def _affiliate_url(self, raw_url: str) -> str:
         if self.affiliate_template:
             try:
+                from urllib.parse import quote
                 return self.affiliate_template.format(url=quote(raw_url, safe=""))
             except Exception:
                 return raw_url
         return raw_url
 
-    def _suggest_tags(self, product_name):
-        suggested_tags = []
-        name_lower = product_name.lower()
-        for tag_name, keywords in self.tag_keywords.items():
-            if any(keyword in name_lower for keyword in keywords):
-                tag = self.db_session.query(Tag).filter_by(nome_tag=tag_name).first()
-                if not tag:
-                    tag = Tag(nome_tag=tag_name)
-                    self.db_session.add(tag)
-                    self.db_session.commit()
-                    self.db_session.refresh(tag)
-                suggested_tags.append(tag)
-        return suggested_tags
-
-    def _passes_keyword_filters(self, product_name: str) -> bool:
-        name = product_name.lower()
-        if self.allow_kw and not any(kw in name for kw in self.allow_kw):
-            return False
-        if self.block_kw and any(kw in name for kw in self.block_kw):
-            return False
-        return True
-
-    def _passes_tag_filters(self, tag_objs) -> bool:
-        names = {t.nome_tag.lower() for t in tag_objs}
-        if self.allow_tags and not (names & self.allow_tags):
-            return False
-        if self.block_tags and (names & self.block_tags):
-            return False
-        return True
-
-    def _last_price(self, produto_id: int, loja_id: int):
+    def _last_price(self, produto_id: int, loja_id: int) -> Optional[float]:
         last = (
-            self.db_session.query(HistoricoPreco)
-            .filter(
-                HistoricoPreco.produto_id == produto_id,
-                HistoricoPreco.loja_id == loja_id,
-            )
+            self.db.query(HistoricoPreco)
+            .filter(HistoricoPreco.produto_id == produto_id, HistoricoPreco.loja_id == loja_id)
             .order_by(HistoricoPreco.data_verificacao.desc())
             .first()
         )
-        return last.preco if last else None
+        return float(last.preco) if last else None
 
     def _has_open_offer(self, produto_id: int, loja_id: int) -> bool:
-        q = (
-            self.db_session.query(Oferta)
-            .filter(
-                Oferta.produto_id == produto_id,
-                Oferta.loja_id == loja_id,
-                Oferta.status.in_(list(self._open_statuses)),
+        estados_abertos = {"PENDENTE_APROVACAO", "APROVADO", "AGENDADO", "PUBLICADO"}
+        return self.db.query(Oferta).filter(
+            Oferta.produto_id == produto_id,
+            Oferta.loja_id == loja_id,
+            Oferta.status.in_(estados_abertos)
+        ).first() is not None
+
+    def _extrair_codigo(self, url: str) -> Optional[str]:
+        if not url:
+            return None
+        padroes = [r"MLB-\d{10}", r"MLB\d{8,}"]
+        if "click1.mercadolivre.com.br" in url:
+            parsed = urlparse(url)
+            destino = parse_qs(parsed.query).get("url", [None])[0]
+            if destino:
+                destino_dec = unquote(destino)
+                for p in padroes:
+                    m = re.search(p, destino_dec)
+                    if m:
+                        return m.group()
+        for p in padroes:
+            m = re.search(p, url)
+            if m:
+                codigo = m.group()
+                return codigo.replace("MLB-", "MLB")  # remove o hífen se existir
+        return None
+
+    def _parse_price_brl(self, txt: str) -> float:
+        if not txt:
+            return 0.0
+        txt = re.sub(r"[^\d,\.]", "", txt.strip()).replace(".", "").replace(",", ".")
+        try:
+            return float(txt)
+        except Exception:
+            return 0.0
+
+    # --------------- Store resolution (somente para oferta) ---------------
+    def _resolve_store_from_product_page(self, product_url: str) -> Dict[str, Optional[str]]:
+        """
+        Baixa a página do produto e extrai:
+          seller_id        -> id_loja_api (seller_id ou official_store_id)
+          item_id_alt      -> id_loja_api_alt (item_id)
+          store_name       -> nome da loja (sem 'Vendido por')
+          id_product       -> código principal do produto (parent_url -> /p/MLBxxxx)
+        """
+        out = {"seller_id": None, "item_id_alt": None, "store_name": None, "id_product": None}
+        if not product_url:
+            return out
+        try:
+            #print("Resolvendo loja na página do produto:", product_url)          
+            time.sleep(self.delay_sec)
+            r = requests.get(product_url, headers=self.headers, timeout=10)  
+            if not r.ok:
+                return out
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            # --- seller / item alt (link com parâmetros) ---
+            link = soup.select_one("a.andes-button.andes-button--medium.andes-button--quiet.andes-button--full-width[href]")
+            if not link:
+                #print("Link principal não encontrado, tentando alternativo...")
+                link = soup.select_one('a[href*="item_id="][href*="seller_id="]') or \
+                       soup.select_one('a[href*="item_id="][href*="official_store_id="]')
+            if link:
+                #print("Link encontrado:", link.get("href"))
+                q = parse_qs(urlparse(link.get("href")).query)
+                out["item_id_alt"] = (q.get("item_id", [None])[0] or "").strip() or None
+                #print("item_id_alt extraído:", out["item_id_alt"])
+                out["seller_id"] = (
+                    (q.get("seller_id", [None])[0] or "").strip()
+                    or (q.get("official_store_id", [None])[0] or "").strip()
+                    or None
+                )
+                #print("seller_id extraído:", out["seller_id"])
+
+            # --- nome da loja ---
+            h2 = soup.select_one("h2.ui-seller-data-header__title") or soup.select_one(
+                "h2.ui-pdp-color--BLACK.ui-pdp-size--MEDIUM.ui-pdp-family--SEMIBOLD.ui-seller-data-header__title.non-selectable"
             )
-            .limit(1)
-            .all()
-        )
-        return len(q) > 0
+            if h2:
+                name = h2.get_text(strip=True)
+                if name.lower().startswith("vendido por"):
+                    name = name[len("vendido por"):].strip()
+                out["store_name"] = name
 
-    def _save_product_and_offer(self, product_data, loja_confiavel):
-        desconto_pct = product_data.get('desconto') or 0.0
-        if desconto_pct < self.min_discount_pct:
-            return False
+            # --- id_product (parent_url hidden input) ---
+            parent_input = soup.find("input", {"type": "hidden", "name": "parent_url"})
+            if parent_input:
+                val = parent_input.get("value") or ""
+                # Suporta dois formatos:
+                # 1) /p/MLB47519001
+                # 2) https://produto.mercadolivre.com.br/MLB-5421177204-conjunto-...
+                def _extract_id_product(parent_val: str) -> Optional[str]:
+                    if not parent_val:
+                        return None
+                    # Formato /p/MLBxxxxx
+                    m = re.search(r"/p/(MLB\d+)", parent_val, re.IGNORECASE)
+                    if m:
+                        return m.group(1).upper()
+                    # Formato URL ou slug com MLB-########## (listing) -> normaliza removendo hífen
+                    m = re.search(r"(MLB-\d+)", parent_val, re.IGNORECASE)
+                    if m:
+                        return m.group(1).upper().replace("MLB-", "MLB")
+                    # Fallback: qualquer MLB#########
+                    m = re.search(r"(MLB\d+)", parent_val, re.IGNORECASE)
+                    if m:
+                        return m.group(1).upper()
+                    return None
 
-        if not self._passes_keyword_filters(product_data['nome_produto']):
-            return False
+                extracted = _extract_id_product(val)
+                if extracted:
+                    out["id_product"] = extracted
 
-        produto = self.db_session.query(Produto).filter_by(
-            product_id_loja=product_data['product_id_loja']
-        ).first()
+        except Exception:
+            pass
+        return out
 
+    def _find_existing_store(self, seller_id: Optional[str], alt_id: Optional[str]) -> Optional[LojaConfiavel]:
+        q = self.db.query(LojaConfiavel)
+        conds = []
+        if seller_id:
+            conds.append(LojaConfiavel.id_loja_api == seller_id)
+        if alt_id:
+            conds.append(LojaConfiavel.id_loja_api_alt == alt_id)
+        #if store_name:
+        #    conds.append(LojaConfiavel.nome_loja == store_name)
+        if not conds:
+            return None
+        from sqlalchemy import or_
+        return q.filter(or_(*conds)).first()
+
+    def _find_existing_store_by_altid(self, alt_id: Optional[str]) -> Optional[LojaConfiavel]:
+        q = self.db.query(LojaConfiavel)
+        conds = []
+        if alt_id:
+            conds.append(LojaConfiavel.id_loja_api_alt == alt_id)
+        if not conds:
+            return None
+        from sqlalchemy import or_
+        return q.filter(or_(*conds)).first()
+
+    # --------------- Persistência ---------------
+    def _save_product_and_offer(self, product_data: dict):
+        """
+        Salva/atualiza sempre o Produto.
+        (Reincluída) lógica de criação automática da loja em LojaConfiavel caso não exista
+        (cria com ativa=False para precisar de ativação posterior).
+        Identificação do produto prioriza:
+          1. id_product extraído (se a coluna existir)
+          2. product_id_loja_alt
+          3. product_id_loja
+        Cria Oferta somente se a loja existir e estiver ativa e passar filtro de tags.
+        """
+        from sqlalchemy import or_
+
+        # Extrai dados completos da página (ids de loja / id_product / nome loja)
+        store_info = self._resolve_store_from_product_page(product_data["url_base"])
+        #print("Url do produto:", product_data["url_base"])
+        print(f"[collector] Extraídos - seller_id: {store_info.get('seller_id')}, item_id_alt: {store_info.get('item_id_alt')}, store_name: {store_info.get('store_name')}, id_product: {store_info.get('id_product')}")
+        id_product_store = store_info.get("id_product") or None
+        alt_code = (store_info.get("item_id_alt") or "").strip() or None
+        listing_code = (store_info.get("seller_id") or "").strip() or None
+
+        # Normalização MLB-
+        def _norm(c: Optional[str]):
+            return c.replace("MLB-", "MLB") if c and "MLB-" in c else c
+
+        id_product_store = _norm(id_product_store)
+        alt_code = _norm(alt_code)
+        listing_code = _norm(listing_code)
+
+        # Assegura ao menos um código para salvar
+        if not listing_code:
+            listing_code = alt_code or id_product_store or "AUTO_GEN"
+
+        # Localiza produto existente
+        #produto = None
+        #if id_product_store and hasattr(Produto, "id_product"):
+        #    produto = self.db.query(Produto).filter(Produto.id_product == id_product_store).first()
+
+        #if not produto and alt_code:
+        #    produto = self.db.query(Produto).filter(
+        #        or_(Produto.product_id_loja_alt == alt_code,
+        #            Produto.product_id_loja == alt_code)
+        #    ).first()
+
+        #if not produto:
+        #    produto = self.db.query(Produto).filter(Produto.product_id_loja == listing_code).first()
+
+        # Localiza loja existente
+        loja = self._find_existing_store(store_info.get("seller_id"), store_info.get("item_id_alt"))
+
+        # Cria loja automaticamente se não existir e houver identificadores mínimos
+        if not loja:
+            seller_id = (store_info.get("seller_id") or "").strip() or None
+            alt_id = (store_info.get("item_id_alt") or "").strip() or None
+            nome_loja = (store_info.get("store_name") or "").strip()
+            if seller_id or alt_id:
+                if not nome_loja:
+                    nome_loja = f"Loja {seller_id or alt_id}"
+                try:
+                    nova_loja = LojaConfiavel(
+                        nome_loja=nome_loja,
+                        plataforma="Mercado Livre",
+                        id_loja_api=seller_id,
+                        id_loja_api_alt=alt_id,
+                        pontuacao_confianca=3,
+                        ativa=False,  # permanece inativa até ativação manual
+                        **({"lojaconfiavel": True} if hasattr(LojaConfiavel, "lojaconfiavel") else {})
+                    )
+                    self.db.add(nova_loja)
+                    self.db.commit()
+                    loja = nova_loja
+                except IntegrityError:
+                    self.db.rollback()
+                    loja = self._find_existing_store(seller_id, alt_id)
+                except Exception:
+                    self.db.rollback()
+
+        # Localiza produto existente
+        produto = None
+        if id_product_store and hasattr(Produto, "id_product"):
+            produto = self.db.query(Produto).filter(Produto.id_product == id_product_store).first()
+
+        # Cria / atualiza produto
         if not produto:
-            produto = Produto(
-                product_id_loja=product_data['product_id_loja'],
-                nome_produto=product_data['nome_produto'],
-                url_base=product_data['url_base'],
-                imagem_url=product_data.get('imagem_url')
-            )
-            self.db_session.add(produto)
-            self.db_session.flush()
-
-            suggested = self._suggest_tags(product_data['nome_produto'])
-            if not self._passes_tag_filters(suggested):
-                self.db_session.rollback()
-                return False
-            for tag in suggested:
-                produto.tags.append(tag)
-            self.db_session.commit()
-            self.db_session.refresh(produto)
+            fields = {
+                "id_product": id_product_store,
+                "product_id_loja": listing_code,
+                "product_id_loja_alt": alt_code,
+                "nome_produto": product_data["nome_produto"],
+                "url_base": product_data["url_base"],
+                "imagem_url": product_data.get("imagem_url"),
+            }
+            if hasattr(Produto, "id_product"):
+                fields["id_product"] = id_product_store or alt_code or listing_code
+            #print(f"[collector] Criando produto: {fields['id_product']}")
+            produto = Produto(**fields)
+            self.db.add(produto)
+            self.db.flush()
         else:
-            produto.nome_produto = product_data['nome_produto'] or produto.nome_produto
-            if product_data.get('imagem_url'):
-                produto.imagem_url = product_data['imagem_url']
-            suggested = self._suggest_tags(product_data['nome_produto'])
-            if not self._passes_tag_filters(suggested):
-                self.db_session.commit()
-                return False
-            for tag in suggested:
+            if product_data.get("nome_produto"):
+                produto.nome_produto = product_data["nome_produto"]
+            if product_data.get("imagem_url"):
+                produto.imagem_url = product_data["imagem_url"]
+            if hasattr(produto, "id_product") and not getattr(produto, "id_product") and id_product_store:
+                produto.id_product = id_product_store
+            if not produto.product_id_loja_alt and alt_code:
+                produto.product_id_loja_alt = alt_code
+
+        # Tags automáticas
+        if self.auto_tag_on_collect:
+            for tag in self._match_db_tags_in_name(product_data["nome_produto"]):
                 if tag not in produto.tags:
                     produto.tags.append(tag)
-            self.db_session.commit()
-            self.db_session.refresh(produto)
 
-        # preço mudou?
-        last_price = self._last_price(produto.id, loja_confiavel.id)
-        current_price = float(product_data['preco_oferta'])
-        same_price = (last_price is not None) and (abs(current_price - float(last_price)) < 1e-6)
+        self.db.commit()
+        self.db.refresh(produto)
 
-        if self._has_open_offer(produto.id, loja_confiavel.id):
-            if not same_price:
-                historico = HistoricoPreco(
-                    produto_id=produto.id,
-                    loja_id=loja_confiavel.id,
-                    preco=current_price,
-                    data_verificacao=datetime.now()
-                )
-                self.db_session.add(historico)
-                self.db_session.commit()
+        # Rebusca loja via alt_id se ainda não resolvida
+        if not loja and alt_code:
+            loja = self._find_existing_store_by_altid(alt_code)
+
+        # Só cria oferta se loja ativa
+        if not loja or not loja.ativa:
             return False
 
+        eligible, _matched = self._eligible_by_db_tags(product_data["nome_produto"])
+        if not eligible:
+            return False
+
+        current_price = float(product_data.get("preco_oferta") or 0.0)
+        last_price = self._last_price(produto.id, loja.id)
+        same_price = last_price is not None and abs(current_price - last_price) < 1e-6
+
+        if self._has_open_offer(produto.id, loja.id):
+            if not same_price:
+                self.db.add(HistoricoPreco(
+                    produto_id=produto.id,
+                    loja_id=loja.id,
+                    preco=current_price,
+                    data_verificacao=datetime.utcnow()
+                ))
+                self.db.commit()
+            return False
         if same_price:
             return False
 
-        historico = HistoricoPreco(
+        self.db.add(HistoricoPreco(
             produto_id=produto.id,
-            loja_id=loja_confiavel.id,
+            loja_id=loja.id,
             preco=current_price,
-            data_verificacao=datetime.now()
-        )
-        self.db_session.add(historico)
+            data_verificacao=datetime.utcnow()
+        ))
 
         oferta = Oferta(
             produto_id=produto.id,
-            loja_id=loja_confiavel.id,
-            preco_original=product_data.get('preco_original'),
+            loja_id=loja.id,
+            preco_original=product_data.get("preco_original"),
             preco_oferta=current_price,
-            url_afiliado_longa=self._affiliate_url(product_data['url_base']),
-            data_encontrado=datetime.now(),
-            data_validade=product_data.get('data_validade'),
-            status="PENDENTE_APROVACAO"
+            status="PENDENTE_APROVACAO",
+            url_afiliado_longa=self._affiliate_url(product_data["url_base"]) if hasattr(Oferta, "url_afiliado_longa") else None,
         )
-        self.db_session.add(oferta)
-        self.db_session.commit()
+        if hasattr(oferta, "data_encontrado"):
+            oferta.data_encontrado = datetime.utcnow()
+        if hasattr(oferta, "data_validade") and product_data.get("data_validade"):
+            oferta.data_validade = product_data["data_validade"]
+
+        self.db.add(oferta)
+        self.db.commit()
         return True
 
-    # --------------- Scrapers (Selenium) ---------------
+    # --------------- Scraping ---------------
+    def _fetch_ml_ofertas_page(self, page_num: int) -> str:
+        url = f"https://www.mercadolivre.com.br/ofertas?page={page_num}"
+        r = requests.get(url, headers=self.headers, timeout=10)
+        r.raise_for_status()
+        print(f"[collector] Página {page_num} OK")
+        return r.text
 
-    def _extract_mlb_id(self, url: str) -> str:
-        m = re.search(r"(MLB-\d+)", url, flags=re.IGNORECASE)
-        if m:
-            return m.group(1)
-        return url.rstrip("/").split("/")[-1]
+    def _parse_ml_offers(self, html: str) -> List[dict]:
+        site = BeautifulSoup(html, "html.parser")
+        descricoes = site.find_all("h3", class_="poly-component__title-wrapper")
+        precosAntes = site.find_all("s", class_="andes-money-amount andes-money-amount--previous andes-money-amount--cents-comma")
+        precosDepois = site.find_all("span", class_="andes-money-amount andes-money-amount--cents-superscript")
+        links = site.find_all("a", class_="poly-component__title")
+        descontos = site.find_all("span", class_="andes-money-amount__discount")
+        imagens = site.find_all("img", class_="poly-component__picture")
 
-    def _scrape_mercadolivre_product(self, url: str):
-        """Scrape de produto com Selenium (DOM renderizado)."""
-        d = self.driver
-        try:
-            d.get(url)
-            wait = WebDriverWait(d, 20)
-
-            # título
-            title = "N/A"
-            for by, sel in [
-                (By.CSS_SELECTOR, "h1.ui-pdp-title"),
-                (By.CSS_SELECTOR, "h1"),
-            ]:
-                try:
-                    el = wait.until(EC.presence_of_element_located((by, sel)))
-                    if el and el.text.strip():
-                        title = el.text.strip()
-                        break
-                except Exception:
-                    continue
-
-            # preço atual
-            price = 0.0
-            found = False
-            for by, sel in [
-                (By.CSS_SELECTOR, "span.andes-money-amount__fraction"),
-                (By.CSS_SELECTOR, "[data-testid='price'] span.andes-money-amount__fraction"),
-            ]:
-                try:
-                    el = d.find_element(by, sel)
-                    txt = el.text.strip()
-                    if txt:
-                        price = float(txt.replace('.', '').replace(',', '.'))
-                        found = True
-                        break
-                except Exception:
-                    continue
-            if not found:
-                # às vezes o preço aparece após um pequeno atraso
-                time.sleep(0.6)
-                try:
-                    el = d.find_element(By.CSS_SELECTOR, "span.andes-money-amount__fraction")
-                    txt = el.text.strip()
-                    if txt:
-                        price = float(txt.replace('.', '').replace(',', '.'))
-                except Exception:
-                    pass
-
-            # preço original (riscado)
-            original_price = price
-            for by, sel in [
-                (By.CSS_SELECTOR, "s .andes-money-amount__fraction"),
-                (By.CSS_SELECTOR, "s.andes-money-amount__fraction"),
-                (By.CSS_SELECTOR, "s span.andes-money-amount__fraction"),
-            ]:
-                try:
-                    el = d.find_element(by, sel)
-                    txt = el.text.strip()
-                    if txt:
-                        original_price = float(txt.replace('.', '').replace(',', '.'))
-                        break
-                except Exception:
-                    continue
-
-            # imagem principal
-            image_url = None
-            for by, sel in [
-                (By.CSS_SELECTOR, "img.ui-pdp-image"),
-                (By.CSS_SELECTOR, "figure.ui-pdp-gallery__figure img"),
-                (By.CSS_SELECTOR, "img"),
-            ]:
-                try:
-                    img = d.find_element(by, sel)
-                    src = img.get_attribute("src")
-                    if src and src.startswith("http"):
-                        image_url = src
-                        break
-                except Exception:
-                    continue
-
-            discount = ((original_price - price) / original_price) * 100 if original_price > 0 else 0.0
-            product_id_loja = self._extract_mlb_id(url) or url
-
-            return {
-                'product_id_loja': product_id_loja,
-                'nome_produto': title,
-                'preco_oferta': price,
-                'preco_original': original_price,
-                'desconto': discount,
-                'url_base': url,
-                'imagem_url': image_url,
-                'data_validade': None,
-            }
-        except Exception as e:
-            print(f"[ML PRODUTO] Falha em {url}: {e}")
-            return None
-
-    def _extract_product_links_from_store(self, html: str):
-        """Extrai links de produto do HTML da loja (heurística robusta)."""
-        soup = BeautifulSoup(html, 'html.parser')
-        links, seen = [], set()
-        for a in soup.find_all('a', href=True):
-            href = a['href']
-            if ('produto.mercadolivre.com' in href) or re.search(r'/MLB-\d', href, flags=re.IGNORECASE):
-                if href.startswith('/'):
-                    href = urljoin('https://www.mercadolivre.com.br', href)
-                href = href.split('#')[0]
-                if href not in seen:
-                    seen.add(href)
-                    links.append(href)
-        return links
-
-    def _scrape_ml_store(self, loja: LojaConfiavel):
-        slug = (loja.id_loja_api or self._slugify(loja.nome_loja)).strip('/')
-        base_url = f"https://www.mercadolivre.com.br/loja/{slug}"
-        total_salvos = 0
-        print(f"[ML LOJA] Coletando: {loja.nome_loja} -> {base_url}")
-
-        d = self.driver
-
-        for page_num in range(1, self.max_pages + 1):
-            if total_salvos >= self.max_products_per_store:
-                break
-
-            url = base_url if page_num == 1 else f"{base_url}?page={page_num}"
+        results: List[dict] = []
+        for descricao, precoAntes, precoDepois, link, desconto, imagem in zip(descricoes, precosAntes, precosDepois, links, descontos, imagens):
+            href = link.get("href", "") or ""
+            name = (descricao.get_text(strip=True) or "").strip()
+            price_before = self._parse_price_brl(precoAntes.get_text(strip=True) if precoAntes else "")
+            price_after = self._parse_price_brl(precoDepois.get_text(strip=True) if precoDepois else "")
+            disc_txt = (desconto.get_text(strip=True) if desconto else "").replace("%", "").replace("OFF", "")
+            product_image = imagem.get("data-src", "") or ""
             try:
-                d.get(url)
-                # pequena espera para a grade renderizar
-                d.implicitly_wait(2)
-                html = d.page_source
-            except Exception as e:
-                print(f"[ML LOJA] Erro ao abrir {url}: {e}")
-                break
+                disc_pct = float(re.sub(r"[^0-9,\.]", "", disc_txt).replace(",", "."))
+            except Exception:
+                disc_pct = 0.0
+            mlb = self._extrair_codigo(href) or "N/A"
+            results.append({
+                #"id_product": None,
+                "product_id_loja": None,
+                "product_id_loja_alt": mlb,
+                "nome_produto": name,
+                "preco_original": price_before if price_before > 0 else None,
+                "preco_oferta": price_after,
+                "desconto": disc_pct,
+                "url_base": href,
+                "imagem_url": product_image,
+                "data_validade": None,
+            })
+        return results
 
-            product_links = self._extract_product_links_from_store(html)
-            if not product_links:
-                if page_num == 1:
-                    print(f"[ML LOJA] Nenhum produto encontrado na loja {loja.nome_loja}. Verifique o slug/HTML.")
-                break
-
-            product_links = product_links[: self.max_products_per_page]
-            print(f"[ML LOJA] Página {page_num}: {len(product_links)} produtos (limitados)")
-
-            for link in product_links:
-                if total_salvos >= self.max_products_per_store:
-                    break
-
-                data = self._scrape_mercadolivre_product(link)
-                if not data:
-                    time.sleep(self.delay_sec)
-                    continue
-
-                try:
-                    created = self._save_product_and_offer(data, loja)
-                    if created:
-                        total_salvos += 1
-                        print(f"[ML LOJA] Salvo: {data['nome_produto'][:80]}... ({data['desconto']:.1f}% off)")
-                    else:
-                        print(f"[ML LOJA] Ignorado (filtros/duplicado/sem mudança): {data['nome_produto'][:80]}")
-                except Exception as e:
-                    print(f"[ML LOJA] Falha ao salvar oferta ({link}): {e}")
-
-                time.sleep(self.delay_sec)
-
-            time.sleep(self.delay_sec)
-
-        print(f"[ML LOJA] Concluído {loja.nome_loja}. Ofertas salvas: {total_salvos}")
-
-    # --------------- Orquestração ---------------
-
+    # --------------- Execução Global ---------------
     def run_collection(self):
-        print("Iniciando coleta de ofertas por lojas Mercado Livre (Selenium, autenticado via cookies)...")
-        lojas_confiaveis = self.db_session.query(LojaConfiavel).filter_by(ativa=True).all()
+        print("[collector] Iniciando coleta global de ofertas do Mercado Livre...")
+        all_offers: List[dict] = []
+        for page in range(1, self.max_pages + 1):
+            try:
+                html = self._fetch_ml_ofertas_page(page)
+                offers = self._parse_ml_offers(html)
+                if not offers:
+                    print("[collector] Sem resultados adicionais.")
+                    break
+                all_offers.extend(offers)
+                time.sleep(self.delay_sec)
+            except Exception as e:
+                print(f"[collector] Erro página {page}: {e}")
+                break
 
-        for loja in lojas_confiaveis:
-            plataforma = (loja.plataforma or "").strip().lower()
-            if plataforma in ("mercado livre", "mercadolivre", "ml"):
-                self._scrape_ml_store(loja)
-            else:
-                print(f"[SKIP] Plataforma não suportada ainda: {loja.plataforma} ({loja.nome_loja})")
+        created_offers = 0
+        for o in all_offers:
+            try:
+                if self._save_product_and_offer(o):
+                    created_offers += 1
+            except Exception as e:
+                print(f"[collector] Erro ao processar item: {e}")
 
-        print("Coleta concluída.")
-
-    def close(self):
-        try:
-            self.browser.close()
-        except Exception:
-            pass
-
-
-if __name__ == "__main__":
-    db = SessionLocal()
-    collector = None
-    try:
-        collector = Collector(db)
-        collector.run_collection()
-    finally:
-        try:
-            if collector:
-                collector.close()
-        except Exception:
-            pass
-        db.close()
+        print(f"[collector] Coleta concluída. Produtos processados: {len(all_offers)} | Ofertas criadas: {created_offers}")
+        return created_offers

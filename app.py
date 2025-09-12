@@ -16,6 +16,7 @@ from sqlalchemy.orm import joinedload, selectinload
 import unicodedata, re
 
 from backend.utils.config import get_config
+from sqlalchemy import or_
 
 # Garantir as tabelas uma ÚNICA vez, usando o bootstrap centralizado do database.py
 create_db_tables()
@@ -177,6 +178,31 @@ def lista_produtos():
               )
               .all()
         )
+
+        # Coleta os IDs de loja existentes nos produtos
+        seller_ids = {p.product_id_loja for p in produtos if getattr(p, "product_id_loja", None)}
+        alt_ids    = {getattr(p, "product_id_loja_alt", None) for p in produtos if getattr(p, "product_id_loja_alt", None)}
+
+        by_seller, by_alt = {}, {}
+        if seller_ids or alt_ids:
+            lojas = (
+                db.query(LojaConfiavel)
+                  .filter(
+                      or_(
+                          LojaConfiavel.id_loja_api.in_(seller_ids) if seller_ids else False,
+                          LojaConfiavel.id_loja_api_alt.in_(alt_ids) if alt_ids else False,
+                      )
+                  )
+                  .all()
+            )
+            by_seller = {l.id_loja_api: l.nome_loja for l in lojas if getattr(l, "id_loja_api", None)}
+            by_alt    = {l.id_loja_api_alt: l.nome_loja for l in lojas if getattr(l, "id_loja_api_alt", None)}
+
+        # Anota nome da loja (se encontrado) sem depender da tabela no template
+        for p in produtos:
+            p._nome_loja = by_seller.get(getattr(p, "product_id_loja", None)) \
+                           or by_alt.get(getattr(p, "product_id_loja_alt", None))
+
     return render_template("produtos.html", produtos=produtos)
 
 @app.route("/variaveis")

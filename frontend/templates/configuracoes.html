@@ -398,7 +398,7 @@
             btn.addEventListener("click", async function() {
                 const tr = this.closest("tr");
                 const id = tr.dataset.lojaId;
-                if (confirm("Tem certeza que deseja remover esta loja?")) {
+                //if (confirm("Tem certeza que deseja remover esta loja?")) {
                     const resp = await fetch(`/api/lojas/${id}`, { method: "DELETE" });
                     const data = await resp.json();
                     if (data.status === "success") {
@@ -406,7 +406,7 @@
                     } else {
                         alert("Erro ao remover loja: " + data.message);
                     }
-                }
+                //}
             });
         });
 

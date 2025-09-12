@@ -87,10 +87,11 @@
       <div class="col-md-10">
         <div class="card-body">
           <h5 class="card-title mb-1">{{ produto.nome_produto }}</h5>
-          <p class="card-text">
-            <small class="text-muted">
-              ID: {{ produto.id }} · ProductID Loja: {{ produto.product_id_loja }}
-            </small>
+          <p class="card-text mb-2">
+            <small class="text-muted d-block">Produto ID: {{ produto.id_product or '—' }}</small>
+            <small class="text-muted d-block">Loja: {{ produto._nome_loja or '—' }}</small>
+            <small class="text-muted d-block">Seller ID: {{ produto.product_id_loja or '—' }}</small>
+            <small class="text-muted d-block">ID alternativo: {{ produto.product_id_loja_alt or '—' }}</small>
           </p>
 
           <p class="mb-1">
@@ -115,7 +116,19 @@
             Ofertas: {{ produto.ofertas|length }}
           </div>
 
-          <div class="d-flex justify-content-end gap-2 mt-3">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <select class="form-select form-select-sm sel-tag-existente" data-produto-id="{{ produto.id }}" style="width:auto; min-width: 160px;">
+              <option value="">Adicionar tag...</option>
+            </select>
+            <button class="btn btn-outline-primary btn-add-tag" data-produto-id="{{ produto.id }}">
+              <i class="bi bi-tag"></i> Incluir tag
+            </button>
+
+            <!-- (botão de loja que você já tinha/quer) -->
+            <button class="btn btn-outline-primary btn-ativar-loja" data-produto-id="{{ produto.id }}">
+              <i class="bi bi-shop"></i> Ativar loja confiável
+            </button>
+
             <button class="btn btn-outline-secondary btn-manter" data-produto-id="{{ produto.id }}">
               <i class="bi bi-check-circle"></i> Manter
             </button>
@@ -187,9 +200,9 @@
     document.querySelectorAll(".btn-excluir").forEach(btn => {
       btn.addEventListener("click", async function () {
         const id = this.dataset.produtoId;
-        if (!confirm("Excluir o produto #" + id + " e todos os dados relacionados? Esta ação não pode ser desfeita.")) {
-          return;
-        }
+        //if (!confirm("Excluir o produto #" + id + " e todos os dados relacionados? Esta ação não pode ser desfeita.")) {
+        //  return;
+        //}
         try {
           const resp = await fetch(`/api/produtos/${id}`, { method: "DELETE" });
           const data = await resp.json();
@@ -203,6 +216,97 @@
         } catch (e) {
           alert("Falha na requisição: " + e);
         }
+      });
+    });
+    
+    async function ativarLoja(produtoId) {
+      try {
+        const resp = await fetch(`/api/lojas/ativar_by_produto/${produtoId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+        const data = await resp.json();
+        if (resp.ok && data.status === "success") {
+          alert(`Loja ativada: ${data.loja.nome_loja}`);
+        } else {
+          alert(data.message || "Loja não cadastrada para este produto.");
+        }
+      } catch(e) {
+        alert("Falha na requisição para ativar loja.");
+      }
+    }
+
+    document.querySelectorAll(".btn-ativar-loja").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pid = btn.getAttribute("data-produto-id");
+        if (pid) ativarLoja(pid);
+      });
+    });
+
+    let allTags = [];
+    fetch("/api/tags")
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === "success") {
+          allTags = data.tags || [];
+          document.querySelectorAll(".sel-tag-existente").forEach(sel => {
+            // popula options
+            sel.innerHTML = `<option value="">Adicionar tag...</option>` +
+              allTags.map(t => `<option value="${t}">${t}</option>`).join("");
+          });
+        }
+      });
+
+    // 2) incluir tag escolhida no produto e reprocessar
+    async function addTagProduto(produtoId, tagName) {
+      if (!tagName) {
+        alert("Selecione uma tag existente.");
+        return;
+      }
+      const resp = await fetch(`/api/produtos/${produtoId}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: [tagName] })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.status === "success") {
+        alert("Tag adicionada e produto reprocessado.");
+        // TODO: opcional — atualizar UI de tags no card sem recarregar a página
+      } else {
+        alert(`Erro ao adicionar tag: ${data.message || "falha"}`);
+      }
+    }
+
+    document.querySelectorAll(".btn-add-tag").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pid = btn.getAttribute("data-produto-id");
+        const sel = btn.parentElement.querySelector(".sel-tag-existente");
+        const tag = sel?.value || "";
+        addTagProduto(pid, tag);
+      });
+    });
+
+    // 3) incluir loja confiável (já existente do seu fluxo anterior) + reprocessar
+    async function incluirLoja(produtoId) {
+      try { 
+        const resp = await fetch(`/api/lojas/auto_from_produto/${produtoId}`, { method: "POST" });
+        const data = await resp.json();
+        if (resp.ok && data.status === "success") {
+          // reprocessa explicitamente (o endpoint de loja já pode chamar reprocessamento se preferir)
+          await fetch(`/api/produtos/${produtoId}/reprocessar`, { method: "POST" });
+          alert(`Loja registrada/atualizada: ${data.loja.nome_loja}. Produto reprocessado.`);
+        } else {
+          alert(`Erro: ${data.message || "Falha ao incluir loja."}`);
+        }
+      } catch (e) {
+        alert("Falha na requisição para incluir loja.");
+      }
+    }
+
+    document.querySelectorAll(".btn-incluir-loja").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pid = btn.getAttribute("data-produto-id");
+        if (pid) incluirLoja(pid);
       });
     });
   });
