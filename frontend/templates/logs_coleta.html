@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Logs de Coleta{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Logs de Coleta</h1>
+{% if not logs %}
+  <div class="alert alert-info">Nenhum log registrado.</div>
+{% else %}
+  <div class="table-responsive">
+    <table class="table table-sm table-striped align-middle">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Data</th>
+            <th>Etapa</th>
+          <th>Status</th>
+          <th>Mensagem</th>
+          <th>URL</th>
+          <th>Detalhes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.id }}</td>
+          <td>{{ log.criado_em.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td>{{ log.etapa or '—' }}</td>
+          <td>
+            {% if log.status == 'FALHA' %}
+              <span class="badge bg-danger">FALHA</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ log.status }}</span>
+            {% endif %}
+          </td>
+          <td style="max-width:250px; word-break:break-word;">{{ log.mensagem }}</td>
+          <td style="max-width:240px; word-break:break-word;">
+            {% if log.product_url %}
+              <a href="{{ log.product_url }}" target="_blank">link</a>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#log-{{ log.id }}">Ver</button>
+            <button class="btn btn-sm btn-danger btn-delete-log" data-log-id="{{ log.id }}" title="Remover"><i class="bi bi-trash"></i></button>
+          </td>
+        </tr>
+        <tr class="collapse" id="log-{{ log.id }}">
+          <td colspan="7">
+            <div class="p-2 bg-light border rounded">
+              <strong>Input (product_data):</strong>
+              <pre class="small mb-2" style="white-space:pre-wrap;">{{ log.input_raw or '—' }}</pre>
+              <strong>Store info:</strong>
+              <pre class="small mb-0" style="white-space:pre-wrap;">{{ log.store_info or '—' }}</pre>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}
+{% block scripts_extra %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  document.querySelectorAll(".btn-delete-log").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      const logId = btn.getAttribute("data-log-id");
+      fetch(`/api/logs/${logId}`, { method: "DELETE" })
+        .then(resp => resp.json())
+        .then(data => {
+          if (data.status === "success") {
+            // Remove a linha da tabela
+            const tr = btn.closest("tr");
+            const collapseTr = document.getElementById(`log-${logId}`);
+            if (tr) tr.remove();
+            if (collapseTr) collapseTr.remove();
+          } else {
+            alert("Erro ao excluir log: " + (data.message || "Erro desconhecido"));
+          }
+        })
+        .catch(() => alert("Erro ao excluir log."));
+    });
+  });
+});
+</script>
+{% endblock %}

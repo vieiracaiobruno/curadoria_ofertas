@@ -7,7 +7,7 @@ import random # Para simular vendas
 
 from ..models.models import Oferta, MetricaOferta
 from ..db.database import DATABASE_URL, Base
-from backend.utils.config import get_config
+from backend.modules.utils.config import get_config
 
 # Configuração do banco de dados
 engine = create_engine(DATABASE_URL)

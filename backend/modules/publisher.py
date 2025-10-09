@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from backend.models.models import Oferta, CanalTelegram, Produto, LojaConfiavel, MetricaOferta
-from backend.utils.config import get_config
+from backend.modules.utils.config import get_config
 
 class Publisher:
     def __init__(self, db_session: Session):
@@ -15,7 +15,7 @@ class Publisher:
         self.telegram_bot_token = get_config("TELEGRAM_BOT_TOKEN")
         # Unificado: Bitly agora usa SEMPRE o Access Token (GAT/OAuth)
         self.bitly_access_token = get_config("BITLY_ACCESS_TOKEN")
-
+ 
     def _shorten_url(self, long_url):
         """Encurta uma URL usando a API do Bitly."""
         #if not self.bitly_api_key or self.bitly_api_key == "SEU_BITLY_API_KEY":
@@ -62,95 +62,103 @@ class Publisher:
             return False
 
     def run_publication(self):
-        """Publica ofertas aprovadas para curadoria nos canais do Telegram."""
-        # Se você aprova com "APROVADO" na API, use esse status:
+        """
+        Publica ofertas aprovadas. Ajustado para usar campos de preço em Produto.
+        Salva link curto em produto.url_afiliado_curta.
+        """
         ofertas_para_publicar = (
             self.db_session.query(Oferta)
-            .filter(Oferta.status == "APROVADO")  # antes: "APROVADA_PARA_CURADORIA"
+            .filter(Oferta.status == "APROVADO")
             .all()
         )
 
         for oferta in ofertas_para_publicar:
-            produto = self.db_session.get(Produto, oferta.produto_id)
-            loja = self.db_session.get(LojaConfiavel, oferta.loja_id)
+            produto = oferta.produto
+            loja = oferta.loja
 
             if not produto or not loja:
-                print(f"Produto ou Loja não encontrados para oferta {oferta.id}. Pulando.")
+                print(f"Produto/Loja ausentes oferta {oferta.id}. Marcando erro.")
                 oferta.status = "REJEITADA_ERRO_DADOS"
                 continue
 
-            short_url = self._shorten_url(oferta.url_afiliado_longa)
+            long_url = produto.url_afiliado_longa or produto.url_base
+            short_url = self._shorten_url(long_url)
+            if short_url and (not produto.url_afiliado_curta or produto.url_afiliado_curta != short_url):
+                produto.url_afiliado_curta = short_url
 
             def escape_markdown_v2(text):
                 if text is None:
                     return ""
-                chars_to_escape = ["_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"]
-                for char in chars_to_escape:
-                    text = text.replace(char, f"\\{char}")
+                chars = ["_", "*", "[", "]", "(", ")", "~", "`", ">", "#",
+                         "+", "-", "=", "|", "{", "}", ".", "!"]
+                for ch in chars:
+                    text = text.replace(ch, f"\\{ch}")
                 return text
 
-            produto_nome_escaped = escape_markdown_v2(produto.nome_produto)
-            loja_nome_escaped = escape_markdown_v2(loja.nome_loja)
-            preco_oferta_escaped = escape_markdown_v2(f"{oferta.preco_oferta:.2f}".replace(".", ","))
-            preco_original_escaped = escape_markdown_v2(f"{oferta.preco_original:.2f}".replace(".", ",")) if oferta.preco_original else ""
-            desconto_escaped = escape_markdown_v2(f"{oferta.desconto_real:.0f}%") if oferta.desconto_real else ""
+            preco_oferta_txt = ""
+            preco_original_txt = ""
+            desconto_txt = ""
+
+            if produto.preco_oferta is not None:
+                preco_oferta_txt = escape_markdown_v2(f"{produto.preco_oferta:.2f}".replace(".", ","))
+
+            if produto.preco_original and produto.preco_original > (produto.preco_oferta or 0):
+                preco_original_txt = escape_markdown_v2(f"{produto.preco_original:.2f}".replace(".", ","))
+
+            if produto.desconto_real:
+                desconto_txt = escape_markdown_v2(f"{produto.desconto_real:.0f}%")
 
             message = "*🔥 OFERTA IMPERDÍVEL 🔥*\n\n"
-            message += f"*Produto:* {produto_nome_escaped}\n"
-            message += f"*Loja:* {loja_nome_escaped}\n"
-            message += f"*Preço:* R$ {preco_oferta_escaped}\n"
-            if oferta.preco_original and oferta.preco_original > oferta.preco_oferta:
-                message += f"_De: R$ {preco_original_escaped}_ \n"
-            if oferta.desconto_real:
-                message += f"*Desconto:* {desconto_escaped}\n"
+            message += f"*Produto:* {escape_markdown_v2(produto.nome_produto)}\n"
+            message += f"*Loja:* {escape_markdown_v2(loja.nome_loja)}\n"
+            if preco_oferta_txt:
+                message += f"*Preço:* R$ {preco_oferta_txt}\n"
+            if preco_original_txt:
+                message += f"_De: R$ {preco_original_txt}_ \n"
+            if desconto_txt:
+                message += f"*Desconto:* {desconto_txt}\n"
             message += f"\n[🛒 Compre aqui]({escape_markdown_v2(short_url)})\n"
 
-            # --- FIX do SyntaxWarning: use "\\#" em vez de "\#" ---
-            tags_do_produto = [tag.nome_tag for tag in produto.tags]
+            tags_do_produto = [t.nome_tag for t in produto.tags]
             if tags_do_produto:
                 hashtags = " ".join(["\\#" + escape_markdown_v2(t) for t in tags_do_produto])
                 message += "\n" + hashtags
 
-            # Publicar nos canais relevantes
-            canais_publicados = []
-            for tag_produto in produto.tags:
-                canais_por_tag = (
+            canais_publicados = set()
+            for tag_prod in produto.tags:
+                canais = (
                     self.db_session.query(CanalTelegram)
-                    .filter(CanalTelegram.tags.any(id=tag_produto.id))
+                    .filter(CanalTelegram.tags.any(id=tag_prod.id))
                     .filter(CanalTelegram.ativo == True)
                     .all()
                 )
-
-                for canal in canais_por_tag:
-                    # Use campos do seu modelo: id_canal_api (chat_id) e nome_amigavel
+                for canal in canais:
                     chat_id = canal.id_canal_api
-                    nome_canal = canal.nome_amigavel
-                    if chat_id not in canais_publicados:
-                        print(f"Tentando publicar oferta {oferta.id} no canal {nome_canal} ({chat_id})...")
-                        if self._send_telegram_message(chat_id, message):
-                            canais_publicados.append(chat_id)
-                            print(f"Oferta {oferta.id} publicada com sucesso no canal {nome_canal}.")
-                        else:
-                            print(f"Falha ao publicar oferta {oferta.id} no canal {nome_canal}.")
+                    if chat_id in canais_publicados:
+                        continue
+                    print(f"Publicando oferta {oferta.id} no canal {canal.nome_amigavel} ({chat_id})...")
+                    if self._send_telegram_message(chat_id, message):
+                        canais_publicados.add(chat_id)
+                        print(f"Publicado no canal {canal.nome_amigavel}.")
+                    else:
+                        print(f"Falha ao publicar no canal {canal.nome_amigavel}.")
 
             if canais_publicados:
                 oferta.status = "PUBLICADO"
                 oferta.data_publicacao = datetime.now()
-                oferta.url_afiliado_curta = short_url  # antes: url_publicada (campo não existe)
-                # MetricaOferta não tem 'conversao' no modelo
+                # Métricas
                 metrica = MetricaOferta(oferta_id=oferta.id, cliques=0, vendas=0)
                 self.db_session.add(metrica)
             else:
                 oferta.status = "REJEITADA_SEM_CANAL"
-                print(f"Oferta {oferta.id} não publicada: nenhum canal relevante encontrado ou falha no envio.")
+                print(f"Oferta {oferta.id} não publicada: nenhum canal apto.")
 
         self.db_session.commit()
 
 if __name__ == "__main__":
-    from curadoria_ofertas.backend.db.database import SessionLocal
+    from backend.db.database import SessionLocal
     db = SessionLocal()
-    publisher = Publisher(db)
-    publisher.run_publication()
+    Publisher(db).run_publication()
     db.close()
 
 

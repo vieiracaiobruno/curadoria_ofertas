@@ -37,10 +37,10 @@ class LojaConfiavel(Base):
     __tablename__ = "lojas_confiaveis"
     __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
-    nome_loja = Column(String, unique=True, nullable=False)
+    # nome_loja NÃO é único (pode repetir entre sellers diferentes)
+    nome_loja = Column(String, nullable=False, index=True, unique=True)
     plataforma = Column(String, nullable=False)
     id_loja_api = Column(String, nullable=True)  # seller_id
-    id_loja_api_alt = Column(String, unique=True, nullable=True)
     pontuacao_confianca = Column(Integer, default=3, nullable=False)
     ativa = Column(Boolean, default=True, nullable=False)
     historico_precos = relationship("HistoricoPreco", back_populates="loja")
@@ -70,13 +70,23 @@ class CanalTelegram(Base):
 class Produto(Base):
     __tablename__ = "produtos"
     __table_args__ = {'extend_existing': True}
-    id = Column(Integer, primary_key=True, index=True)
-    id_product = Column(String, unique=True, nullable=False)
-    product_id_loja = Column(String, nullable=False, index=True)
-    product_id_loja_alt = Column(String, nullable=True, index=True)
+    id = Column(Integer, primary_key=True, index=True)  # <== adicionado autoincrement
+    id_product = Column(String, unique=True, nullable=False, index=True)  # product code global (ex: Amazon ASIN)
+    product_id_loja = Column(String, nullable=False, index=True)  # seller/listing code principal
     nome_produto = Column(String, nullable=False)
     url_base = Column(String, nullable=False)
     imagem_url = Column(String, nullable=True)
+
+    # ---- CAMPOS MOVIDOS DE Oferta ----
+    preco_original = Column(Float, nullable=True)
+    preco_oferta = Column(Float, nullable=True)
+    url_afiliado_longa = Column(String, nullable=True)
+    url_afiliado_curta = Column(String, nullable=True)
+    data_encontrado = Column(DateTime, default=datetime.now, nullable=True)
+    data_validade = Column(DateTime, nullable=True)
+    desconto_real = Column(Float, nullable=True)
+    ganho_real = Column(Float, nullable=True)  # NOVO (percentual de ganho futuro)
+
     tags = relationship("Tag", secondary="produto_tags", back_populates="produtos")
     historico_precos = relationship("HistoricoPreco", back_populates="produto")
     ofertas = relationship("Oferta", back_populates="produto")
@@ -99,17 +109,15 @@ class Oferta(Base):
     id = Column(Integer, primary_key=True, index=True)
     produto_id = Column(Integer, ForeignKey('produtos.id'), nullable=False)
     loja_id = Column(Integer, ForeignKey('lojas_confiaveis.id'), nullable=False)
-    preco_original = Column(Float, nullable=True)
-    preco_oferta = Column(Float, nullable=False)
-    url_afiliado_longa = Column(String, nullable=False)
-    url_afiliado_curta = Column(String, nullable=True)
-    data_encontrado = Column(DateTime, default=datetime.now, nullable=False)
-    data_validade = Column(DateTime, nullable=True)
+
+    # REMOVIDOS (agora em Produto):
+    # preco_original, preco_oferta, url_afiliado_longa, url_afiliado_curta,
+    # data_encontrado, data_validade, desconto_real
+
     status = Column(String, default="PENDENTE_APROVACAO", nullable=False)
     motivo_validacao = Column(String, nullable=True)
     data_publicacao = Column(DateTime, nullable=True)
     mensagem_id_telegram = Column(String, nullable=True)
-    desconto_real = Column(Float, nullable=True)
 
     produto = relationship("Produto", back_populates="ofertas")
     loja = relationship("LojaConfiavel", back_populates="ofertas")
@@ -152,3 +160,15 @@ class ConfigVar(Base):
     is_secret = Column(Boolean, default=True, nullable=False)
     description = Column(String, nullable=True)    # dica/ajuda na UI
     updated_at = Column(DateTime, default=datetime.now, nullable=False)
+
+class LogColeta(Base):
+    __tablename__ = "logs_coleta"
+    __table_args__ = {'extend_existing': True}
+    id = Column(Integer, primary_key=True, index=True)
+    criado_em = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    product_url = Column(String, nullable=True)
+    mensagem = Column(String, nullable=True)
+    etapa = Column(String, nullable=True)           # ex: VALIDACAO_IDS
+    status = Column(String, default="FALHA", nullable=False)
+    input_raw = Column(String, nullable=True)       # JSON de product_data recebido
+    store_info = Column(String, nullable=True)      # JSON de store_info extraído

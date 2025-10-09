@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-RunPipeline (classe) — orquestra a curadoria de ofertas seguindo o modelo do run_pipeline.py,
-mas usando a coleta simples (requests + BeautifulSoup) como base.
+RunPipeline (classe) — orquestra a curadoria de ofertas:
+1) Coleta (Mercado Livre via Selenium + BeautifulSoup)
+2) Processamento/Persistência (estrutura de ofertas)
+3) Validação
+4) Publicação
+5) Métricas
 """
 import os
 import logging
@@ -12,31 +16,13 @@ project_root = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, project_root)
 
 # DB
-try:
-    from backend.db.database import SessionLocal
-except Exception:
-    from db.database import SessionLocal  # fallback
 
-# Módulos
-try:
-    from backend.modules.collector import Collector
-except Exception:
-    from modules.collector import Collector  # fallback
-
-try:
-    from backend.modules.validator import Validator
-except Exception:
-    from modules.validator import Validator  # fallback
-
-try:
-    from backend.modules.publisher import Publisher
-except Exception:
-    from modules.publisher import Publisher  # fallback
-
-try:
-    from backend.modules.metrics_analyzer import MetricsAnalyzer
-except Exception:
-    from modules.metrics_analyzer import MetricsAnalyzer  # fallback
+from backend.db.database import SessionLocal
+from backend.modules.collectors.ml_collector import MLCollector
+from backend.modules.services.offer_processor import OfferProcessor
+from backend.modules.validator import Validator
+from backend.modules.publisher import Publisher
+from backend.modules.metrics_analyzer import MetricsAnalyzer
 
 
 logging.basicConfig(
@@ -53,25 +39,32 @@ class RunPipeline:
         try:
             logging.info("=== Iniciando Pipeline (classe) de Curadoria de Ofertas ===")
 
-            # 1) Coleta (requests+BS4) — baseado no run_pipeline_simple.py
-            logging.info("Iniciando coleta (Collector - requests/BS4)…")
-            collector = Collector(self.db)
-            collector.run_collection()
-            logging.info("Coleta concluída.")
+            # 1) Coleta (Mercado Livre)
+            logging.info("Iniciando coleta (Mercado Livre / Selenium)…")
+            ml_collector = MLCollector()
+            items = ml_collector.run_collection()
+            logging.info(f"Coleta concluída. Itens extraídos: {len(items)}")
 
-            # 2) Validação — mantém sua lógica atual
+            # 2) Processamento/Persistência (estrutura de ofertas)
+            logging.info("Processando itens (persistência/estrutura de ofertas)…")
+            processor = OfferProcessor(self.db)
+            for it in items:
+                processor.process_item(it)
+            logging.info(f"Processamento concluído. Stats: {processor.stats}")
+
+            # 3) Validação — mantém sua lógica atual
             logging.info("Iniciando validação…")
             validator = Validator(self.db)
             validator.run_validation()
             logging.info("Validação concluída.")
 
-            # 3) Publicação — mantém sua lógica atual
+            # 4) Publicação — mantém sua lógica atual
             logging.info("Iniciando publicação…")
             publisher = Publisher(self.db)
             publisher.run_publication()
             logging.info("Publicação concluída.")
 
-            # 4) Métricas — mantém sua lógica atual
+            # 5) Métricas — mantém sua lógica atual
             logging.info("Iniciando análise de métricas…")
             metrics_analyzer = MetricsAnalyzer(self.db)
             metrics_analyzer.analyze_metrics()

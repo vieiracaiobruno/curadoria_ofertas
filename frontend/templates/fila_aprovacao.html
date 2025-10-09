@@ -1,97 +1,54 @@
-
 {% extends "base.html" %}
 
 {% block title %}Fila de Aprovação{% endblock %}
 
 {% block head_extra %}
 <style>
-  /* estilo menor para o motivo da validação */
-    .motivo-validacao {
-      font-size: .85rem;   /* menor que o normal */
-      font-weight: 500;    /* semi-bold em vez de bold */
-      line-height: 1.3;
-    }
-    .card-oferta {
-        transition: box-shadow .3s;
-    }
-    .card-oferta:hover {
-        box-shadow: 0 .5rem 1rem rgba(0,0,0,.15);
-    }
-    .tag {
-        cursor: pointer;
-        margin-bottom: 5px;
-        display: inline-flex;
-        align-items: center;
-    }
-    .tag .remove-tag {
-        margin-left: 5px;
-        cursor: pointer;
-        color: rgba(255,255,255,0.7);
-    }
-    .tag .remove-tag:hover {
-        color: #dc3545; /* Vermelho do Bootstrap */
-    }
-    .preco-desconto {
-        font-size: 1.75rem;
-        font-weight: bold;
-        color: #198754; /* Verde do Bootstrap */
-    }
-    .preco-original {
-        text-decoration: line-through;
-        color: #6c757d; /* Cinza do Bootstrap */
-        margin-left: 10px;
-    }
-    .product-image {
-        max-width: 100%;
-        height: auto;
-        max-height: 150px;
-        object-fit: contain;
-    }
-    /* ====== Layouts ====== */
-    #ofertas-container.grid-1 { display:block; }
-    #ofertas-container.grid-5 {
-      display:grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 1rem;
-    }
-    #ofertas-container.grid-5 .card-oferta { margin-bottom: 0; }
+  .motivo-validacao {
+    font-size: .85rem;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .card-oferta { transition: box-shadow .3s; }
+  .card-oferta:hover { box-shadow: 0 .5rem 1rem rgba(0,0,0,.15); }
+  .tag { cursor: pointer; margin-bottom: 5px; display:inline-flex; align-items:center; }
+  .tag .remove-tag { margin-left:5px; cursor:pointer; color:rgba(255,255,255,0.7); }
+  .tag .remove-tag:hover { color:#dc3545; }
+  .preco-desconto { font-size:1.75rem; font-weight:bold; color:#198754; }
+  .preco-original { text-decoration:line-through; color:#6c757d; margin-left:10px; }
+  .product-image { max-width:100%; height:auto; max-height:150px; object-fit:contain; }
 
-    /* ====== Compactação no modo 5 por linha ====== */
-    #ofertas-container.grid-5 .card { border-radius: .5rem; }
-    #ofertas-container.grid-5 .card-body { padding: .55rem .6rem; }
+  #ofertas-container.grid-1 { display:block; }
+  #ofertas-container.grid-5 {
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:1rem;
+  }
+  #ofertas-container.grid-5 .card-oferta { margin-bottom:0; }
+  #ofertas-container.grid-5 .card { border-radius:.5rem; }
+  #ofertas-container.grid-5 .card-body { padding:.55rem .6rem; }
+  #ofertas-container.grid-5 .card-title {
+    font-size:.95rem; line-height:1.2;
+    display:-webkit-box; -webkit-line-clamp:2; line-clamp:2;
+    -webkit-box-orient:vertical; overflow:hidden; margin-bottom:.25rem!important;
+  }
+  #ofertas-container.grid-5 .text-muted.small,
+  #ofertas-container.grid-5 .fw-bold.mb-1,
+  #ofertas-container.grid-5 .canais-destino-text { font-size:.78rem!important; }
+  #ofertas-container.grid-5 .preco-desconto { font-size:1.15rem; }
+  #ofertas-container.grid-5 .preco-original { margin-left:.5rem; font-size:.8rem; }
+  #ofertas-container.grid-5 .badge { font-size:.65rem; padding:.25rem .35rem; }
+  #ofertas-container.grid-5 .btn { padding:.25rem .4rem; font-size:.75rem; }
+  #ofertas-container.grid-5 .mt-3 { margin-top:.5rem!important; }
+  #ofertas-container.grid-5 .product-image { max-height:90px; }
+  #ofertas-container.grid-5 .row.g-0 { display:block; }
+  #ofertas-container.grid-5 .row.g-0 > .col-md-2,
+  #ofertas-container.grid-5 .row.g-0 > .col-md-10 { width:100%; max-width:100%; flex:0 0 100%; }
+  #ofertas-container.grid-5 .row.g-0 > .col-md-2 { padding:.6rem!important; }
 
-    #ofertas-container.grid-5 .card-title {
-      font-size: .95rem;
-      line-height: 1.2;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      margin-bottom: .25rem !important;
-    }
-    #ofertas-container.grid-5 .text-muted.small,
-    #ofertas-container.grid-5 .fw-bold.mb-1,
-    #ofertas-container.grid-5 .canais-destino-text { font-size: .78rem !important; }
-
-    #ofertas-container.grid-5 .preco-desconto { font-size: 1.15rem; }
-    #ofertas-container.grid-5 .preco-original { margin-left: .5rem; font-size: .8rem; }
-
-    #ofertas-container.grid-5 .badge { font-size: .65rem; padding: .25rem .35rem; }
-    #ofertas-container.grid-5 .btn { padding: .25rem .4rem; font-size: .75rem; }
-    #ofertas-container.grid-5 .mt-3 { margin-top: .5rem !important; }
-
-    /* Imagem menor e “imagem em cima + texto embaixo” para caber melhor */
-    #ofertas-container.grid-5 .product-image { max-height: 90px; }
-    #ofertas-container.grid-5 .row.g-0 { display:block; }
-    #ofertas-container.grid-5 .row.g-0 > .col-md-2,
-    #ofertas-container.grid-5 .row.g-0 > .col-md-10 { width:100%; max-width:100%; flex:0 0 100%; }
-    #ofertas-container.grid-5 .row.g-0 > .col-md-2 { padding: .6rem !important; }
-
-    /* Em telas pequenas, sempre 1 por linha */
-    @media (max-width: 768px) {
-      #ofertas-container.grid-5 { grid-template-columns: 1fr; }
-    }
+  @media (max-width:768px){
+    #ofertas-container.grid-5 { grid-template-columns:1fr; }
+  }
 </style>
 {% endblock %}
 
@@ -106,306 +63,263 @@
 </div>
 
 <div id="ofertas-container" class="grid-1">
-    {% if not ofertas %}
-        <div class="alert alert-info" role="alert">
-            Nenhuma oferta pendente de aprovação no momento.
-        </div>
-    {% endif %}
-
-    {% for oferta in ofertas %}
-    <div class="card card-oferta mb-4" id="oferta-{{ oferta.id }}">
-        <div class="row g-0">
-            <div class="col-md-2 d-flex align-items-center justify-content-center p-3">
-                <img src="{{ oferta.produto.imagem_url or url_for('static', filename='placeholder.png') }}" class="img-fluid rounded-start product-image" alt="{{ oferta.produto.nome_produto }}">
-            </div>
-            <div class="col-md-10">
-                <div class="card-body">
-                    <h5 class="card-title">{{ oferta.produto.nome_produto }}</h5>
-                    <p class="card-text"><small class="text-muted">Vendido por {{ oferta.loja.nome_loja }}</small></p>
-                    
-                    <div>
-                        <span class="preco-desconto">R$ {{ "%.2f"|format(oferta.preco_oferta) }}</span>
-                        {% if oferta.preco_original %}
-                        <span class="preco-original">R$ {{ "%.2f"|format(oferta.preco_original) }}</span>
-                        {% endif %}
-                    </div>
-                    <p class="text-warning motivo-validacao mt-1">
-                      <i class="bi bi-star-fill"></i> {{ oferta.motivo_validacao }}
-                    </p>
-                    <div class="mt-3">
-                        <label class="form-label fw-bold">Tags (Categorias):</label>
-
-                        <!-- Contêiner ÚNICO de tags (filtradas + adicionadas pelo curador) -->
-                        <div class="tags-combined-container" data-oferta-id="{{ oferta.id }}">
-                            {# Inicial: tags vindas do servidor — filtradas #}
-                            {% for tag in oferta._prefilter_tags or [] %}
-                            <span class="badge bg-primary p-2 me-1 tag" data-tag-name="{{ tag.nome_tag }}">
-                                #{{ tag.nome_tag }} <i class="bi bi-x-circle ms-1 remove-tag" title="Remover"></i>
-                            </span>
-                            {% endfor %}
-
-                            {# Inicial: tags já associadas ao produto (se houver) #}
-                            {% for tag in oferta.produto.tags %}
-                            <span class="badge bg-primary p-2 me-1 tag" data-tag-name="{{ tag.nome_tag }}">
-                                #{{ tag.nome_tag }} <i class="bi bi-x-circle ms-1 remove-tag" title="Remover"></i>
-                            </span>
-                            {% endfor %}
-                        </div>
-
-                        <!-- Dropdown com todas as tags cadastradas + botão Incluir -->
-                        <div class="input-group input-group-sm mt-2">
-                            <select class="form-select tag-select">
-                            {% for t in todas_tags %}
-                                <option value="{{ t.nome_tag }}">{{ t.nome_tag }}</option>
-                            {% endfor %}
-                            </select>
-                            <button class="btn btn-outline-primary btn-incluir-tag" type="button">
-                            Incluir
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="mt-3">
-                        <p class="fw-bold mb-1">Canais de Destino:</p>
-                        <p class="canais-destino-text"><i class="bi bi-telegram text-primary"></i> Carregando...</p>
-                    </div>
-
-                    <div class="d-flex justify-content-end gap-2 mt-3">
-                        <button class="btn btn-danger btn-rejeitar" data-oferta-id="{{ oferta.id }}"><i class="bi bi-trash-fill"></i> Rejeitar</button>
-                        <button class="btn btn-secondary btn-agendar" data-oferta-id="{{ oferta.id }}"><i class="bi bi-clock-fill"></i> Agendar</button>
-                        <button class="btn btn-success btn-aprovar" data-oferta-id="{{ oferta.id }}"><i class="bi bi-check-circle-fill"></i> Aprovar e Postar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+  {% if not ofertas %}
+    <div class="alert alert-info" role="alert">
+      Nenhuma oferta pendente de aprovação no momento.
     </div>
-    {% endfor %}
+  {% endif %}
+
+  {% for oferta in ofertas %}
+  {% set p = oferta.produto %}
+  <div class="card card-oferta mb-4" id="oferta-{{ oferta.id }}">
+    <div class="row g-0">
+      <div class="col-md-2 d-flex align-items-center justify-content-center p-3">
+        <img src="{{ p.imagem_url or url_for('static', filename='placeholder.png') }}"
+             class="img-fluid rounded-start product-image"
+             alt="{{ p.nome_produto }}">
+      </div>
+      <div class="col-md-10">
+        <div class="card-body">
+          <h5 class="card-title">{{ p.nome_produto }}</h5>
+          <p class="card-text">
+            <small class="text-muted">
+              Vendido por {{ oferta.loja.nome_loja if oferta.loja else '—' }}<br>
+              ID: {{ p.id_product }} | Seller: {{ p.product_id_loja }}
+            </small>
+          </p>
+
+          <div>
+            {% if p.preco_oferta is not none %}
+              <span class="preco-desconto">R$ {{ "%.2f"|format(p.preco_oferta) }}</span>
+            {% endif %}
+            {% if p.preco_original and p.preco_original > (p.preco_oferta or 0) %}
+              <span class="preco-original">R$ {{ "%.2f"|format(p.preco_original) }}</span>
+            {% endif %}
+            {% if p.desconto_real %}
+              <span class="badge bg-success">Desconto -{{ "%.1f"|format(p.desconto_real) }}%</span>
+            {% endif %}
+            {% if p.ganho_real %}
+              <span class="badge bg-primary">Ganhos {{ "%.1f"|format(p.ganho_real) }}%</span>
+            {% endif %}
+          </div>
+
+          <div class="mt-3">
+            <label class="form-label fw-bold">Tags (Categorias):</label>
+            <div class="tags-combined-container" data-oferta-id="{{ oferta.id }}">
+              {# Tags sugeridas pelo filtro #}
+              {% for tag in oferta._prefilter_tags or [] %}
+              <span class="badge bg-primary p-2 me-1 tag" data-tag-name="{{ tag.nome_tag }}">
+                #{{ tag.nome_tag }} <i class="bi bi-x-circle ms-1 remove-tag" title="Remover"></i>
+              </span>
+              {% endfor %}
+              {# Tags já associadas ao produto #}
+              {% for tag in p.tags %}
+              <span class="badge bg-primary p-2 me-1 tag" data-tag-name="{{ tag.nome_tag }}">
+                #{{ tag.nome_tag }} <i class="bi bi-x-circle ms-1 remove-tag" title="Remover"></i>
+              </span>
+              {% endfor %}
+            </div>
+            <div class="input-group input-group-sm mt-2">
+              <select class="form-select tag-select">
+                {% for t in todas_tags %}
+                  <option value="{{ t.nome_tag }}">{{ t.nome_tag }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-outline-primary btn-incluir-tag" type="button">Incluir</button>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <p class="fw-bold mb-1">Canais de Destino:</p>
+            <p class="canais-destino-text"><i class="bi bi-telegram text-primary"></i> Carregando...</p>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 mt-3">
+            <button class="btn btn-danger btn-rejeitar" data-oferta-id="{{ oferta.id }}">
+              <i class="bi bi-trash-fill"></i> Rejeitar
+            </button>
+            <button class="btn btn-secondary btn-agendar" data-oferta-id="{{ oferta.id }}">
+              <i class="bi bi-clock-fill"></i> Agendar
+            </button>
+            <button class="btn btn-success btn-aprovar" data-oferta-id="{{ oferta.id }}">
+              <i class="bi bi-check-circle-fill"></i> Aprovar e Postar
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
 </div>
 {% endblock %}
 
 {% block scripts_extra %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-  // ---- Alternância de layout 1×/5× ----
   const ofertasContainer = document.getElementById("ofertas-container");
   const b1 = document.getElementById("layout-1");
   const b5 = document.getElementById("layout-5");
 
-  function applyFilaMode(mode) {
+  function applyFilaMode(mode){
     ofertasContainer.classList.remove("grid-1","grid-5");
     ofertasContainer.classList.add(mode);
-    [b1, b5].forEach(b => b?.classList.remove("btn-secondary","active"));
-    [b1, b5].forEach(b => b?.classList.add("btn-outline-secondary"));
-    if (mode === "grid-1") {
-      b1?.classList.remove("btn-outline-secondary"); b1?.classList.add("btn-secondary","active");
-    } else {
-      b5?.classList.remove("btn-outline-secondary"); b5?.classList.add("btn-secondary","active");
-    }
+    [b1,b5].forEach(b=> b.classList.remove("btn-secondary","active","btn-outline-secondary"));
+    [b1,b5].forEach(b=> b.classList.add("btn-outline-secondary"));
+    if(mode==="grid-1"){ b1.classList.add("btn-secondary","active"); b1.classList.remove("btn-outline-secondary"); }
+    else { b5.classList.add("btn-secondary","active"); b5.classList.remove("btn-outline-secondary"); }
   }
-  const savedFila = localStorage.getItem("fila.layout");
-  applyFilaMode(savedFila === "grid-5" ? "grid-5" : "grid-1");
+  applyFilaMode(localStorage.getItem("fila.layout")==="grid-5" ? "grid-5" : "grid-1");
+  b1.addEventListener("click", ()=>{ applyFilaMode("grid-1"); localStorage.setItem("fila.layout","grid-1"); });
+  b5.addEventListener("click", ()=>{ applyFilaMode("grid-5"); localStorage.setItem("fila.layout","grid-5"); });
 
-  b1?.addEventListener("click", () => { applyFilaMode("grid-1"); localStorage.setItem("fila.layout","grid-1"); });
-  b5?.addEventListener("click", () => { applyFilaMode("grid-5"); localStorage.setItem("fila.layout","grid-5"); });
-
-  // ---------- Utilidades ----------
-  function keyFor(ofertaId) { return "ofertaTags:" + ofertaId; }
+  function keyFor(id){ return "ofertaTags:"+id; }
   function normalizeTag(s){ return (s||"").trim().toLowerCase(); }
 
-  function readTagsFromDOM(container){
-    return Array.from(container.querySelectorAll(".tag"))
-      .map(el => normalizeTag(el.dataset.tagName))
-      .filter(Boolean);
+  function readTags(container){
+    return Array.from(container.querySelectorAll(".tag")).map(el=> normalizeTag(el.dataset.tagName)).filter(Boolean);
   }
-
   function renderTags(container, tags){
-    container.innerHTML = "";
-    tags.forEach(t => {
-      const span = document.createElement("span");
-      span.className = "badge bg-primary p-2 me-1 tag";
-      span.dataset.tagName = t;
-      span.innerHTML = `#${t} <i class="bi bi-x-circle ms-1 remove-tag" title="Remover"></i>`;
+    container.innerHTML="";
+    tags.forEach(t=>{
+      const span=document.createElement("span");
+      span.className="badge bg-primary p-2 me-1 tag";
+      span.dataset.tagName=t;
+      span.innerHTML=`#${t} <i class="bi bi-x-circle ms-1 remove-tag" title="Remover"></i>`;
       container.appendChild(span);
     });
   }
-
-  function saveTags(ofertaId, tags){
-    // Persistência local para sobreviver a refresh
-    localStorage.setItem(keyFor(ofertaId), JSON.stringify(tags));
-  }
-
+  function saveTags(ofertaId,tags){ localStorage.setItem(keyFor(ofertaId), JSON.stringify(tags)); }
   function loadTags(ofertaId){
-    try {
-      const raw = localStorage.getItem(keyFor(ofertaId));
-      return raw ? JSON.parse(raw) : null;
-    } catch(e){ return null; }
+    try{ const raw=localStorage.getItem(keyFor(ofertaId)); return raw?JSON.parse(raw):null; }catch(e){ return null;}
   }
 
-  async function refreshCanais(cardEl){
-    const container = cardEl.querySelector(".tags-combined-container");
-    const tags = readTagsFromDOM(container);
-    const canaisDestinoText = cardEl.querySelector(".canais-destino-text");
-    canaisDestinoText.innerHTML = `<i class="bi bi-telegram text-primary"></i> Carregando...`;
-
-    try {
-      const resp = await fetch(`/api/canais_destino?tags=${encodeURIComponent(tags.join(","))}`);
-      const data = await resp.json();
-      if (data.status === "success") {
-        if (data.canais.length > 0) {
-          canaisDestinoText.innerHTML = `<i class="bi bi-telegram text-primary"></i> ${data.canais.map(c => c.nome_amigavel).join(", ")}`;
-        } else {
-          canaisDestinoText.innerHTML = `<i class="bi bi-telegram text-warning"></i> Nenhum canal encontrado para estas tags.`;
+  async function refreshCanais(card){
+    const container=card.querySelector(".tags-combined-container");
+    const tags=readTags(container);
+    const el=card.querySelector(".canais-destino-text");
+    el.innerHTML=`<i class="bi bi-telegram text-primary"></i> Carregando...`;
+    try{
+      const r=await fetch(`/api/canais_destino?tags=${encodeURIComponent(tags.join(","))}`);
+      const data=await r.json();
+      if(data.status==="success"){
+        if(data.canais.length){
+          el.innerHTML=`<i class="bi bi-telegram text-primary"></i> ${data.canais.map(c=>c.nome_amigavel).join(", ")}`;
+        }else{
+          el.innerHTML=`<i class="bi bi-telegram text-warning"></i> Nenhum canal encontrado.`;
         }
-      } else {
-        canaisDestinoText.innerHTML = `<i class="bi bi-exclamation-triangle text-danger"></i> Erro ao carregar canais.`;
+      }else{
+        el.innerHTML=`<i class="bi bi-exclamation-triangle text-danger"></i> Erro ao carregar canais.`;
       }
-    } catch (e) {
-      canaisDestinoText.innerHTML = `<i class="bi bi-exclamation-triangle text-danger"></i> Erro de rede.`;
+    }catch(e){
+      el.innerHTML=`<i class="bi bi-exclamation-triangle text-danger"></i> Erro de rede.`;
     }
   }
 
   function ensureAtLeastOne(container){
-    const n = readTagsFromDOM(container).length;
-    return n >= 1;
+    return readTags(container).length >= 1;
   }
 
-  // ---------- Inicialização dos cards ----------
-  document.querySelectorAll(".card-oferta").forEach(card => {
-    const container = card.querySelector(".tags-combined-container");
-    const ofertaId = container.dataset.ofertaId;
-
-    // Se houver tags salvas no localStorage, elas prevalecem
-    const saved = loadTags(ofertaId);
-    if (Array.isArray(saved) && saved.length > 0) {
+  document.querySelectorAll(".card-oferta").forEach(card=>{
+    const container=card.querySelector(".tags-combined-container");
+    const ofertaId=container.dataset.ofertaId;
+    const saved=loadTags(ofertaId);
+    if(Array.isArray(saved) && saved.length){
       renderTags(container, Array.from(new Set(saved.map(normalizeTag))));
-    } else {
-      // Ainda assim, garanta unicidade caso o servidor tenha repetidas
-      const uniq = Array.from(new Set(readTagsFromDOM(container)));
+    }else{
+      const uniq=Array.from(new Set(readTags(container)));
       renderTags(container, uniq);
       saveTags(ofertaId, uniq);
     }
-
-    // Carrega canais de destino com o estado atual
     refreshCanais(card);
   });
 
-  // ---------- Remoção de tags (com validação de mínimo 1) ----------
-  document.addEventListener("click", function (e) {
-    const removeBtn = e.target.closest(".remove-tag");
-    if (!removeBtn) return;
-
-    const container = removeBtn.closest(".tags-combined-container");
-    const card = removeBtn.closest(".card-oferta");
-    const ofertaId = container.dataset.ofertaId;
-
-    // Tentativa de remover
-    const tagEl = removeBtn.closest(".tag");
+  document.addEventListener("click", e=>{
+    const btn=e.target.closest(".remove-tag");
+    if(!btn) return;
+    const container=btn.closest(".tags-combined-container");
+    const card=btn.closest(".card-oferta");
+    const ofertaId=container.dataset.ofertaId;
+    const tagEl=btn.closest(".tag");
     tagEl.remove();
-
-    // Se zerou, cancela e avisa
-    if (!ensureAtLeastOne(container)) {
+    if(!ensureAtLeastOne(container)){
       alert("Pelo menos 1 tag é obrigatória.");
-      // Recoloca a tag removida
       container.appendChild(tagEl);
       return;
     }
-
-    // Persistência + refresh de canais
-    const tags = readTagsFromDOM(container);
-    saveTags(ofertaId, tags);
+    const tags=readTags(container);
+    saveTags(ofertaId,tags);
     refreshCanais(card);
   });
 
-  // ---------- Inclusão de tags pelo dropdown ----------
-  document.querySelectorAll(".card-oferta").forEach(card => {
-    const container = card.querySelector(".tags-combined-container");
-    const ofertaId = container.dataset.ofertaId;
-    const sel = card.querySelector(".tag-select");
-    const btn = card.querySelector(".btn-incluir-tag");
-
-    btn.addEventListener("click", function () {
-      const tag = normalizeTag(sel.value);
-      if (!tag) return;
-
-      const current = readTagsFromDOM(container);
-      if (current.includes(tag)) return; // evita duplicata
-
-      renderTags(container, [...current, tag]);
-      saveTags(ofertaId, [...current, tag]);
+  document.querySelectorAll(".card-oferta").forEach(card=>{
+    const container=card.querySelector(".tags-combined-container");
+    const ofertaId=container.dataset.ofertaId;
+    const sel=card.querySelector(".tag-select");
+    const btn=card.querySelector(".btn-incluir-tag");
+    btn.addEventListener("click",()=>{
+      const t=normalizeTag(sel.value);
+      if(!t) return;
+      const current=readTags(container);
+      if(current.includes(t)) return;
+      renderTags(container,[...current,t]);
+      saveTags(ofertaId,[...current,t]);
       refreshCanais(card);
     });
   });
 
-  // ---------- Aprovar/Rejeitar/Agendar: usam o estado atual das tags ----------
-  document.querySelectorAll(".btn-aprovar").forEach(button => {
-    button.addEventListener("click", async function () {
-      const card = this.closest(".card-oferta");
-      const container = card.querySelector(".tags-combined-container");
-      const ofertaId = container.dataset.ofertaId;
-      const tags = readTagsFromDOM(container);
+  async function acaoOferta(ofertaId, method, payload){
+    return fetch(`/api/ofertas/${ofertaId}/${method}`,{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: payload ? JSON.stringify(payload) : null
+    }).then(r=>r.json());
+  }
 
-      if (confirm("Tem certeza que deseja aprovar e postar esta oferta?")) {
-        const response = await fetch(`/api/ofertas/${ofertaId}/aprovar`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tags })
-        });
-        const data = await response.json();
-        if (data.status === "success") {
-          // limpa persistência e remove o card
-          localStorage.removeItem(keyFor(ofertaId));
-          card.remove();
-          const count = document.querySelectorAll(".card-oferta").length;
-          document.getElementById("contador-ofertas").textContent = count;
-        } else {
-          alert("Erro ao aprovar oferta: " + data.message);
-        }
-      }
+  function atualizarContador(){
+    document.getElementById("contador-ofertas").textContent =
+      document.querySelectorAll(".card-oferta").length;
+  }
+
+  document.querySelectorAll(".btn-aprovar").forEach(b=>{
+    b.addEventListener("click", async function(){
+      const card=this.closest(".card-oferta");
+      const container=card.querySelector(".tags-combined-container");
+      const ofertaId=container.dataset.ofertaId;
+      const tags=readTags(container);
+      if(!confirm("Aprovar e postar esta oferta?")) return;
+      const data=await acaoOferta(ofertaId,"aprovar",{tags});
+      if(data.status==="success"){
+        localStorage.removeItem(keyFor(ofertaId));
+        card.remove(); atualizarContador();
+      }else alert("Erro: "+data.message);
     });
   });
 
-  document.querySelectorAll(".btn-rejeitar").forEach(button => {
-    button.addEventListener("click", async function () {
-      const card = this.closest(".card-oferta");
-      const container = card.querySelector(".tags-combined-container");
-      const ofertaId = container.dataset.ofertaId;
-      if (confirm("Tem certeza que deseja rejeitar esta oferta?")) {
-        const response = await fetch(`/api/ofertas/${ofertaId}/rejeitar`, { method: "POST" });
-        const data = await response.json();
-        if (data.status === "success") {
-          localStorage.removeItem(keyFor(ofertaId));
-          card.remove();
-          const count = document.querySelectorAll(".card-oferta").length;
-          document.getElementById("contador-ofertas").textContent = count;
-        } else {
-          alert("Erro ao rejeitar oferta: " + data.message);
-        }
-      }
+  document.querySelectorAll(".btn-rejeitar").forEach(b=>{
+    b.addEventListener("click", async function(){
+      const card=this.closest(".card-oferta");
+      const ofertaId=card.querySelector(".tags-combined-container").dataset.ofertaId;
+      if(!confirm("Rejeitar esta oferta?")) return;
+      const data=await acaoOferta(ofertaId,"rejeitar");
+      if(data.status==="success"){
+        localStorage.removeItem(keyFor(ofertaId));
+        card.remove(); atualizarContador();
+      } else alert("Erro: "+data.message);
     });
   });
 
-  document.querySelectorAll(".btn-agendar").forEach(button => {
-    button.addEventListener("click", async function () {
-      const card = this.closest(".card-oferta");
-      const container = card.querySelector(".tags-combined-container");
-      const ofertaId = container.dataset.ofertaId;
-      const dataAgendamento = prompt("Para qual data e hora você deseja agendar? (YYYY-MM-DDTHH:MM:SS)");
-      if (dataAgendamento) {
-        const resp = await fetch(`/api/ofertas/${ofertaId}/agendar`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data_agendamento: dataAgendamento })
-        });
-        const data = await resp.json();
-        if (data.status === "success") {
-          localStorage.removeItem(keyFor(ofertaId));
-          card.remove();
-          const count = document.querySelectorAll(".card-oferta").length;
-          document.getElementById("contador-ofertas").textContent = count;
-        } else {
-          alert("Erro ao agendar oferta: " + data.message);
-        }
-      }
+  document.querySelectorAll(".btn-agendar").forEach(b=>{
+    b.addEventListener("click", async function(){
+      const card=this.closest(".card-oferta");
+      const ofertaId=card.querySelector(".tags-combined-container").dataset.ofertaId;
+      const dt=prompt("Data/hora (YYYY-MM-DDTHH:MM:SS)");
+      if(!dt) return;
+      const data=await acaoOferta(ofertaId,"agendar",{data_agendamento:dt});
+      if(data.status==="success"){
+        localStorage.removeItem(keyFor(ofertaId));
+        card.remove(); atualizarContador();
+      } else alert("Erro: "+data.message);
     });
   });
 

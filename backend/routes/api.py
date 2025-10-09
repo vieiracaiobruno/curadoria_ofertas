@@ -1,11 +1,13 @@
+from typing import Optional
 from flask import Blueprint, request, jsonify
+import json
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 from datetime import datetime
 
 from ..db.database import DATABASE_URL, Base, SessionLocal
-from ..models.models import Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, MetricaOferta, OfertaPublicada, HistoricoPreco, ConfigVar
-from backend.utils.config import get_config, set_config, list_configs
+from ..models.models import Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, MetricaOferta, OfertaPublicada, HistoricoPreco, ConfigVar, LogColeta
+from backend.modules.utils.config import get_config, set_config, list_configs
 
 api_bp = Blueprint("api", __name__)
 
@@ -190,8 +192,6 @@ def api_add_loja():
             nome_loja=(data.get("nome_loja") or "").strip(),
             plataforma=(data.get("plataforma") or "Mercado Livre").strip(),
             id_loja_api=(data.get("id_loja_api") or "").strip(),
-            # se seu modelo já tiver a coluna extra, trate aqui; se não tiver, ignore esta linha
-            id_loja_api_alt=(data.get("id_loja_api_alt") or "").strip() or None,
             pontuacao_confianca=int(data.get("pontuacao_confianca", 3)),
             ativa=bool(data.get("ativa", True)),
         )
@@ -472,46 +472,6 @@ def api_delete_env(cfg_id: int):
         db.commit()
     return jsonify({"status":"success"})
 
-@api_bp.route("/lojas/auto_from_produto/<int:produto_id>", methods=["POST"])
-def api_auto_create_loja_from_produto(produto_id):
-    """
-    Dado um produto (com url_base), resolve MLB-XXXX, tenta achar loja por id alternativo
-    e, se não existir, abre a página e cria a LojaConfiavel automaticamente.
-    """
-    from backend.modules.collector import Collector  # reusar lógica
-    db = SessionLocal()
-    try:
-        produto = db.get(Produto, produto_id)
-        if not produto:
-            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
-
-        col = Collector(db)  # usa o mesmo BrowserManager/cookies
-        loja, alt = col._resolve_store_by_alt_or_scrape(produto.url_base)
-        col.browser.close()
-
-        if not loja:
-            return jsonify({"status": "error", "message": "Não foi possível identificar a loja pelo link do produto."}), 422
-
-        # grava alt no produto se ainda não tem
-        if alt and not produto.product_id_loja_alt:
-            produto.product_id_loja_alt = alt
-            db.commit()
-
-        data = {
-            "id": loja.id,
-            "nome_loja": loja.nome_loja,
-            "plataforma": loja.plataforma,
-            "id_loja_api": loja.id_loja_api,
-            "id_loja_api_alt": loja.id_loja_api_alt
-        }
-        return jsonify({"status": "success", "message": "Loja resolvida/registrada com sucesso.", "loja": data}), 200
-
-    except Exception as e:
-        db.rollback()
-        return jsonify({"status": "error", "message": str(e)}), 500
-    finally:
-        db.close()
-
 @api_bp.route("/tags", methods=["GET"])
 def api_list_tags():
     db = SessionLocal()
@@ -531,12 +491,14 @@ def api_add_tags_to_product(produto_id):
     try:
         produto = db.get(Produto, produto_id)
         if not produto:
+            print("Produto não encontrado")
             return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
 
         names = request.json.get("tags", []) or []
         # pega só as que já existem
         existentes = db.query(Tag).filter(Tag.nome_tag.in_(names)).all()
         if not existentes:
+            print("Nenhuma das tags existe")
             return jsonify({"status": "error", "message": "Nenhuma das tags existe."}), 400
 
         # atribui (sem duplicar)
@@ -546,60 +508,117 @@ def api_add_tags_to_product(produto_id):
         db.commit()
 
         # reprocessa para verificar elegibilidade de oferta
-        return _api_reprocess_single_product(produto_id)
+        reprocess_resp = _api_reprocess_single_product(produto_id)
+        # Pode ser (Response, status) ou Response
+        if isinstance(reprocess_resp, tuple):
+            resp_obj, resp_status = reprocess_resp
+        else:
+            resp_obj, resp_status = reprocess_resp, 200
+        try:
+            reprocess_data = resp_obj.get_json()
+        except Exception:
+            try:
+                import json
+                reprocess_data = json.loads(resp_obj.get_data(as_text=True))
+            except Exception:
+                reprocess_data = {"status": "error", "message": "Falha ao ler JSON do reprocessamento"}
+
+        # Se conseguiu criar a oferta (status success e outcome == 'oferta_criada' ou similar)
+        if reprocess_data.get("status") == "success":
+            return jsonify(reprocess_data), resp_status
+        else:
+            return jsonify({
+                "status": "success",
+                "message": "Tag(s) incluída(s) com sucesso, mas a oferta não foi criada.",
+                "reprocess": reprocess_data
+            }), 200
 
     except Exception as e:
         db.rollback()
+        print("Error in api_add_tags_to_product:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         db.close()
 
 # helper reaproveitável
 def _api_reprocess_single_product(produto_id: int):
-    from backend.modules.collector import Collector
+    from backend.modules.services.offer_processor import OfferProcessor
     db2 = SessionLocal()
+    print(f"Reprocessando produto {produto_id} via API...")
     try:
-        produto2 = db2.get(Produto, produto_id)
-        if not produto2:
+        produto = db2.get(Produto, produto_id)
+        if not produto:
+            print("Produto não encontrado")
             return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+        
+        # Busca loja associada
+        loja = db2.query(LojaConfiavel).filter(LojaConfiavel.id_loja_api == produto.product_id_loja).first()
 
-        col = Collector(db2)
+        # Monta o dict com todos os campos relevantes do produto
+        pdata = {
+            "url_base": produto.url_base,
+            "nome_produto": produto.nome_produto,
+            "preco_original": produto.preco_original,
+            "preco_oferta": produto.preco_oferta,
+            "desconto": produto.desconto_real,
+            "imagem_url": produto.imagem_url,
+            "data_validade": getattr(produto, "data_validade", None),
+            "id_product": produto.id_product,
+            "seller_id": produto.product_id_loja,
+            "store_name": getattr(loja, "nome_loja", None) if loja else None,
+            "seller_score": getattr(loja, "pontuacao_confianca", None) if loja else None,
+            "ganho_real": getattr(produto, "ganho_real", None),
+            "url_afiliado_curta": getattr(produto, "url_afiliado_curta", None),
+        }
 
-        # tenta resolver a loja via MLB do link ou fallback (método que você já tem)
-        loja, _ = None, None
-        # se você já tiver _resolve_store_by_alt_or_scrape no Collector, use:
-        try:
-            loja, _ = col._resolve_store_by_alt_or_scrape(produto2.url_base)  # usa sua lógica de MLB/seller
-        except Exception:
-            loja = None
+        processor = OfferProcessor(db2)
+        # Simula a criação do produto (já existe)
+        product_created = False
 
-        # re-scrape do produto para obter preço/descrição atualizados
-        pdata = col._scrape_mercadolivre_product(produto2.url_base)
-        # força os IDs do produto conhecidos (product_id_loja) dentro de pdata
-        pdata['product_id_loja'] = produto2.product_id_loja
-        pdata['url_base'] = produto2.url_base
+        # Função fail para logging (pode ser simplificada aqui)
+        def fail(label: str, msg: str, product_created: Optional[bool] = None):
+            required_fields = [
+                "url_base", "id_product", "seller_id", "store_name", "preco_original",
+                "preco_oferta", "desconto", "nome_produto", "imagem_url",
+                "seller_score", "ganho_real", "url_afiliado_curta"
+            ]
+            missing_fail = [field for field in required_fields if not pdata.get(field)]
+            processor._log_error(
+                pdata.get("url_base"),
+                f"{msg} | Campos ausentes: {', '.join(missing_fail)}" if missing_fail else msg,
+                label.upper(),
+                pdata,
+                {field: pdata.get(field) for field in required_fields}
+            )
+            return (False, label, product_created)
 
-        created = col._save_product_and_offer(pdata, loja)
-        col.browser.close()
+        # Executa a lógica de elegibilidade e criação da oferta
+        result = processor._process_offer_eligibility_and_creation(
+            loja, produto, product_created, pdata, fail
+        )
 
-        msg = "Produto reprocessado; oferta criada." if created else "Produto reprocessado; sem oferta elegível."
-        return jsonify({"status": "success", "message": msg}), 200
+        ok, outcome, product_created_flag = result
+
+        return jsonify({
+            "status": "success" if ok else "error",
+            "outcome": outcome,
+            "produto_id": produto.id,
+            "loja_id": loja.id if loja else None,
+            "produto": pdata
+        }), 200 if ok else 422
 
     except Exception as e:
         db2.rollback()
+        print("Error in _api_reprocess_single_product:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         db2.close()
 
-@api_bp.route("/produtos/<int:produto_id>/reprocessar", methods=["POST"])
-def api_reprocess_product(produto_id):
-    return _api_reprocess_single_product(produto_id)
-
 @api_bp.route("/lojas/ativar_by_produto/<int:produto_id>", methods=["POST"])
 def api_ativar_loja_por_produto(produto_id: int):
     """
-    Ativa (ativa=True) a loja já cadastrada relacionada ao produto via seller_id (product_id_loja)
-    ou id alternativo (product_id_loja_alt). NÃO cria nova loja. Se não encontrar, erro.
+    Ativa loja relacionada ao produto via seller_id (product_id_loja).
+    IDs alternativos removidos.
     """
     db = SessionLocal()
     try:
@@ -608,41 +627,91 @@ def api_ativar_loja_por_produto(produto_id: int):
             return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
 
         seller_id = (produto.product_id_loja or "").strip()
-        alt_id = (produto.product_id_loja_alt or "").strip()
+        if not seller_id:
+            return jsonify({"status": "error", "message": "Produto não possui seller_id (product_id_loja)."}), 422
 
-        if not seller_id and not alt_id:
-            return jsonify({"status": "error", "message": "Produto não possui identificadores de loja."}), 422
-
-        q = db.query(LojaConfiavel)
-        from sqlalchemy import or_
-        loja = q.filter(
-            or_(
-                LojaConfiavel.id_loja_api == seller_id if seller_id else False,
-                LojaConfiavel.id_loja_api_alt == alt_id if alt_id else False
-            )
-        ).first()
-
+        loja = (
+            db.query(LojaConfiavel)
+              .filter(LojaConfiavel.id_loja_api == seller_id)
+              .first()
+        )
         if not loja:
             return jsonify({"status": "error", "message": "Não há loja cadastrada para este produto."}), 404
 
         if not loja.ativa:
             loja.ativa = True
-        # garante campo lojaconfiavel=True se existir
         if hasattr(loja, "lojaconfiavel") and loja.lojaconfiavel is False:
             loja.lojaconfiavel = True
 
         db.commit()
+
+        # Reprocessa o produto logo após ativar a loja
+        reprocess_resp = _api_reprocess_single_product(produto_id)
+        
+        # Pode ser (Response, status) ou Response
+        if isinstance(reprocess_resp, tuple):
+            resp_obj, resp_status = reprocess_resp
+        else:
+            resp_obj, resp_status = reprocess_resp, 200
+        try:
+            reprocess_data = resp_obj.get_json()
+        except Exception:
+            try:
+                reprocess_data = json.loads(resp_obj.get_data(as_text=True))
+            except Exception:
+                reprocess_data = {"status": "error", "message": "Falha ao ler JSON do reprocessamento"}
+        
         return jsonify({
             "status": "success",
-            "message": "Loja ativada com sucesso.",
+            "message": "Loja ativada e produto reprocessado.",
             "loja": {
                 "id": loja.id,
                 "nome_loja": loja.nome_loja,
                 "id_loja_api": loja.id_loja_api,
-                "id_loja_api_alt": loja.id_loja_api_alt,
                 "ativa": loja.ativa
-            }
+            },
+            "reprocess": reprocess_data
         }), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
+
+# ---------------------------
+# Logs (CRUD)
+# ---------------------------
+@api_bp.route("/logs", methods=["GET"])
+def api_list_logs():
+    db = SessionLocal()
+    try:
+        logs = db.query(LogColeta).order_by(LogColeta.data_criacao.desc()).all()
+        data = [{
+            "id": log.id,
+            "tipo": log.tipo,
+            "status": log.status,
+            "mensagem": log.mensagem,
+            "data_criacao": log.data_criacao.isoformat(),
+            "detalhes": log.detalhes
+        } for log in logs]
+        return jsonify({"status": "success", "logs": data}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
+
+@api_bp.route("/logs/<int:log_id>", methods=["DELETE"])
+def api_delete_log(log_id):
+    print("Deleting log", log_id)
+    db = SessionLocal()
+    log = db.get(LogColeta, log_id)
+    if not log:
+        db.close()
+        return jsonify({"status": "error", "message": "Log não encontrado."}), 404
+    try:
+        db.delete(log)
+        db.commit()
+        return jsonify({"status": "success"}), 200
     except Exception as e:
         db.rollback()
         return jsonify({"status": "error", "message": str(e)}), 500

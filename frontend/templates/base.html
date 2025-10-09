@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -47,10 +46,16 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">Fila</a>
+                        <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" 
+                            href="{{ url_for('dashboard') }}">
+                            Fila
+                        </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'publicadas' %}active{% endif %}" href="{{ url_for('publicadas') }}">Ofertas</a>
+                        <a class="nav-link {% if request.endpoint == 'publicadas' %}active{% endif %}" 
+                            href="{{ url_for('publicadas') }}">
+                            Ofertas
+                        </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'lista_produtos' %}active{% endif %}"
@@ -59,12 +64,27 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'configuracoes' %}active{% endif %}" href="{{ url_for('configuracoes') }}">Configurações</a>
+                        <a class="nav-link {% if request.endpoint == 'configuracoes' %}active{% endif %}" 
+                            href="{{ url_for('configuracoes') }}">
+                            Configurações
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'lojas_confiaveis' %}active{% endif %}"
+                            href="{{ url_for('lojas_confiaveis') }}">
+                            Lojas
+                        </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'variaveis' %}active{% endif %}"
                             href="{{ url_for('variaveis') }}">
                             Variáveis
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'view_logs' %}active{% endif %}" 
+                            href="{{ url_for('view_logs') }}">
+                            Logs
                         </a>
                     </li>
                 </ul>
