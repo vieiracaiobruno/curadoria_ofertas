@@ -28,7 +28,7 @@ class LinkParser:
 
     def cleanup_expired_links(self):
         """Remove links com TTL expirado (mais de N dias ativos sem sucesso)."""
-        cutoff = datetime.utcnow() - timedelta(days=self.ttl_days)
+        cutoff = datetime.now() - timedelta(days=self.ttl_days)
         try:
             deleted = self.db.query(LinkColeta).filter(
                 LinkColeta.ativo == True,
@@ -56,7 +56,7 @@ class LinkParser:
             
             if success:
                 link.ativo = False
-                link.processado_em = datetime.utcnow()
+                link.processado_em = datetime.now()
             else:
                 link.tentativas = (link.tentativas or 0) + 1
             

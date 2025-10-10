@@ -165,7 +165,7 @@ class LogColeta(Base):
     __tablename__ = "logs_coleta"
     __table_args__ = {'extend_existing': True}
     id = Column(Integer, primary_key=True, index=True)
-    criado_em = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    criado_em = Column(DateTime, default=datetime.now, index=True, nullable=False)
     product_url = Column(String, nullable=True)
     mensagem = Column(String, nullable=True)
     etapa = Column(String, nullable=True)           # ex: VALIDACAO_IDS
@@ -183,6 +183,6 @@ class LinkColeta(Base):
     url = Column(String, nullable=False, index=True)  # URL do produto a ser parseado
     source = Column(String, nullable=False, index=True)  # origem: "mercadolivre", "amazon", etc
     ativo = Column(Boolean, default=True, nullable=False, index=True)  # True = ainda precisa processar
-    criado_em = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)  # data de criação
+    criado_em = Column(DateTime, default=datetime.now, nullable=False, index=True)  # data de criação
     processado_em = Column(DateTime, nullable=True)  # data do último processamento bem-sucedido
     tentativas = Column(Integer, default=0, nullable=False)  # contador de tentativas de parse
