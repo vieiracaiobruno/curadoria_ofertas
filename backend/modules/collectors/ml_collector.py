@@ -537,6 +537,26 @@ class MLCollector(BaseCollector):
 
     # ====================== API principal ======================
     def run_collection(self) -> List[Dict]:
+        """
+        Coleta todos os links e retorna lista de dicts com url e source.
+        NÃO faz enriquecimento - isso será feito pelo LinkParser.
+        """
+        results: List[dict] = []
+        try:
+            for page in range(1, self.max_pages + 1):
+                html = self._fetch_ml_ofertas_page(page)
+                page_offers = self._parse_ml_offers(html)
+                results += page_offers  # concatena os resultados de cada página
+            self.close()
+        except Exception as e:
+            print(f"Erro durante a coleta: {e}")
+        return results
+    
+    def run_collection_legacy(self) -> List[Dict]:
+        """
+        LEGACY: Coleta links e faz enriquecimento em uma única operação.
+        Mantido para compatibilidade mas não recomendado.
+        """
         results: List[dict] = []
         offers: List[dict] = []
         try:

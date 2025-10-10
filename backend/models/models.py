@@ -172,3 +172,17 @@ class LogColeta(Base):
     status = Column(String, default="FALHA", nullable=False)
     input_raw = Column(String, nullable=True)       # JSON de product_data recebido
     store_info = Column(String, nullable=True)      # JSON de store_info extraído
+
+class LinkColeta(Base):
+    __tablename__ = "links_coleta"
+    __table_args__ = (
+        UniqueConstraint("url", "source", name="uq_link_source"),
+        {'extend_existing': True}
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    url = Column(String, nullable=False, index=True)  # URL do produto a ser parseado
+    source = Column(String, nullable=False, index=True)  # origem: "mercadolivre", "amazon", etc
+    ativo = Column(Boolean, default=True, nullable=False, index=True)  # True = ainda precisa processar
+    criado_em = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)  # data de criação
+    processado_em = Column(DateTime, nullable=True)  # data do último processamento bem-sucedido
+    tentativas = Column(Integer, default=0, nullable=False)  # contador de tentativas de parse
