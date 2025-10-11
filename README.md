@@ -111,11 +111,36 @@ TELEGRAM_CHANNEL_ID=your-channel-id
 ### Execução Manual do Pipeline
 
 ```bash
-# Pipeline completo
+# Pipeline completo (novo fluxo com coleta de links em duas fases)
 python run_pipeline.py
 
 # Pipeline simplificado (para testes)
 python run_pipeline_simple.py
+```
+
+### Novo Fluxo de Coleta (v2.0)
+
+O sistema agora utiliza um fluxo otimizado em duas fases:
+
+1. **Fase 1 - Coleta de Links**: Coleta apenas os URLs das ofertas de forma rápida
+2. **Fase 2 - Parsing Paralelo**: Processa os links coletados em paralelo usando múltiplas threads
+
+**Vantagens:**
+- ⚡ 3-5x mais rápido (parsing paralelo)
+- 🔄 Retry automático para falhas
+- 🚫 Previne duplicatas
+- 📊 Melhor rastreabilidade
+- ⏱️ TTL de 24h para links
+
+Para mais detalhes, veja:
+- [Documentação do Fluxo](docs/LINK_COLLECTION_FLOW.md)
+- [Comparação Fluxo Antigo vs Novo](docs/FLUXO_COMPARACAO.md)
+
+### Teste de Validação
+
+```bash
+# Executa testes para validar o fluxo de coleta
+python test_link_collection.py
 ```
 
 ### Execução Automatizada
