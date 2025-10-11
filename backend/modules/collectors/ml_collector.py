@@ -146,6 +146,94 @@ class MLCollector(BaseCollector):
             pass
         return cli
 
+    def _serialize_cookies_for_header(self, cookies_list: List[dict]) -> str:
+        """
+        Converte lista de cookies (formato CDP) para string no formato de header Cookie.
+        """
+        if not cookies_list:
+            return ""
+        
+        cookie_pairs = []
+        for cookie in cookies_list:
+            name = cookie.get("name", "")
+            value = cookie.get("value", "")
+            if name and value:
+                cookie_pairs.append(f"{name}={value}")
+        
+        return "; ".join(cookie_pairs)
+
+    def _generate_affiliate_links_batch(self, urls: List[str]) -> Dict[str, Optional[str]]:
+        """
+        Gera links de afiliado em lote usando a API do Mercado Livre.
+        
+        Args:
+            urls: Lista de URLs de produtos
+            
+        Returns:
+            Dicionário mapeando URL original -> short_url
+        """
+        if not urls:
+            return {}
+        
+        # Obter cookies da sessão logada
+        cookies_str = ""
+        if self.use_selenium and hasattr(self, "_session_state"):
+            cookies_list = self._session_state.get("cookies", [])
+            cookies_str = self._serialize_cookies_for_header(cookies_list)
+        
+        if not cookies_str:
+            print("Aviso: Nenhum cookie disponível para gerar links de afiliado")
+            return {url: None for url in urls}
+        
+        # Preparar headers
+        headers = {
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
+            'content-type': 'application/json',
+            'origin': 'https://www.mercadolivre.com.br',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+            'Cookie': cookies_str
+        }
+        
+        # Preparar body
+        body = {
+            "urls": urls,
+            "tag": "promocoesdahora"
+        }
+        
+        # Fazer request
+        api_url = "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink"
+        
+        try:
+            print(f"Gerando {len(urls)} links de afiliado via API...")
+            response = requests.post(api_url, headers=headers, json=body, timeout=30)
+            response.raise_for_status()
+            
+            result_data = response.json()
+            
+            # Mapear URLs originais para short_urls
+            url_map = {}
+            if result_data.get("status") == 200 and "urls" in result_data:
+                for item in result_data["urls"]:
+                    origin_url = item.get("origin_url", "")
+                    short_url = item.get("short_url", "")
+                    if origin_url:
+                        url_map[origin_url] = short_url if short_url else None
+            
+            # Preencher URLs que não retornaram com None
+            for url in urls:
+                if url not in url_map:
+                    url_map[url] = None
+            
+            success_count = sum(1 for v in url_map.values() if v is not None)
+            print(f"Links de afiliado gerados com sucesso: {success_count}/{len(urls)}")
+            
+            return url_map
+            
+        except Exception as e:
+            print(f"Erro ao gerar links de afiliado via API: {e}")
+            return {url: None for url in urls}
+
     def _enrich_with_http(self, item: dict) -> dict:
         """Enriquece item usando HTTP direto (sem Selenium)"""
         url = item.get("url_base") or ""
@@ -182,6 +270,38 @@ class MLCollector(BaseCollector):
         
         return item
     
+    def _enrich_with_client_without_affiliate(self, client: SeleniumClient, item: dict) -> dict:
+        """
+        Enriquece item usando Selenium mas SEM gerar link de afiliado.
+        Link de afiliado será gerado em lote via API posteriormente.
+        """
+        url = item.get("url_base") or ""
+        if not url:
+            return item
+        
+        html = client.get_page(
+            url,
+            wait_any_id=["__PRELOADED_STATE__"],
+            timeout_sec=self.delay_sec,
+        )
+        soup = BeautifulSoup(html, "html.parser")
+        data = self._extract__preloaded_json(soup)
+        # Extrai dados adicionais do __PRELOADED_STATE__
+        item["store_name"] = self._extract_store_name(data)
+        item["seller_id"] = self._extract_seller_id(data)
+        item["id_product"] = self._extract_id_product(data)
+        item["preco_original"] = self._extract_price_before(data)
+        item["preco_oferta"] = self._extract_price_after(data)
+        item["desconto"] = self._extract_discount(data)
+        item["nome_produto"] = self._extract_product_name(data)
+        item["imagem_url"] = self._extract_product_image(data)
+        item["seller_score"] = self._extract_seller_score(soup)
+        # Extrai dados adicionais que nao estão no JSON
+        item["ganho_real"] = self._extract_ganho_real(soup)
+        # NÃO gerar url_afiliado_curta aqui - será feito via API em lote
+        item["url_afiliado_curta"] = None
+        return item
+
     def _enrich_with_client(self, client: SeleniumClient, item: dict) -> dict:
         # Worker reentrante: usa driver com cookies do perfil logado
         url = item.get("url_base") or ""
@@ -221,9 +341,11 @@ class MLCollector(BaseCollector):
         Paraleliza o enriquecimento em N workers.
         No modo HTTP: usa requisições diretas sem Selenium.
         No modo Selenium: cada worker usa seu próprio driver efêmero com cookies do perfil logado.
+        
+        Após enriquecer os dados básicos, gera os links de afiliado em lote via API.
         """
         if not self.use_selenium:
-            # Modo HTTP: enriquecimento sequencial (pode ser paralelizado no futuro se necessário)
+            # Modo HTTP: enriquecimento sequencial
             out = []
             for it in offers:
                 try:
@@ -231,46 +353,64 @@ class MLCollector(BaseCollector):
                 except Exception as e:
                     print(f"Erro ao enriquecer item via HTTP: {e}")
                     out.append(it)
+            # Gerar links de afiliado em lote via API (mesmo no modo HTTP)
+            urls_to_generate = [item.get("url_base") for item in out if item.get("url_base")]
+            if urls_to_generate:
+                affiliate_map = self._generate_affiliate_links_batch(urls_to_generate)
+                for item in out:
+                    url_base = item.get("url_base")
+                    if url_base and url_base in affiliate_map:
+                        item["url_afiliado_curta"] = affiliate_map[url_base]
             return out
         
         # Modo Selenium (existente)
+        results = []
         if self.max_enrich_workers <= 1 or len(offers) <= 1:
             # Sequencial usando o perfil logado diretamente
-            out = []
             for it in offers:
-                out.append(self._enrich_with_client(self.selenium_profile, it))
-            return out
-
-        workers = min(self.max_enrich_workers, len(offers))
-        chunks = self._split_chunks(offers, workers)
-        clients: List[SeleniumClient] = [self._make_client() for _ in range(len(chunks))]
-        results: List[dict] = []
-        try:
-            with ThreadPoolExecutor(max_workers=len(chunks)) as ex:
-                futures = []
-                for idx, chunk in enumerate(chunks):
-                    client = clients[idx]
-                    def run_chunk(items: List[dict], cli: SeleniumClient):
-                        out = []
-                        for it in items:
-                            try:
-                                out.append(self._enrich_with_client(cli, it))
-                            except Exception:
-                                out.append(it)
-                        return out
-                    print(f"Iniciando worker {idx+1}/{len(chunks)} com {len(chunk)} itens...")
-                    futures.append(ex.submit(run_chunk, chunk, client))
-                for fut in as_completed(futures):
+                # Não usar get_short_affiliate_url do Selenium, será feito via API depois
+                enriched = self._enrich_with_client_without_affiliate(self.selenium_profile, it)
+                results.append(enriched)
+        else:
+            workers = min(self.max_enrich_workers, len(offers))
+            chunks = self._split_chunks(offers, workers)
+            clients: List[SeleniumClient] = [self._make_client() for _ in range(len(chunks))]
+            try:
+                with ThreadPoolExecutor(max_workers=len(chunks)) as ex:
+                    futures = []
+                    for idx, chunk in enumerate(chunks):
+                        client = clients[idx]
+                        def run_chunk(items: List[dict], cli: SeleniumClient):
+                            out = []
+                            for it in items:
+                                try:
+                                    out.append(self._enrich_with_client_without_affiliate(cli, it))
+                                except Exception:
+                                    out.append(it)
+                            return out
+                        print(f"Iniciando worker {idx+1}/{len(chunks)} com {len(chunk)} itens...")
+                        futures.append(ex.submit(run_chunk, chunk, client))
+                    for fut in as_completed(futures):
+                        try:
+                            results.extend(fut.result())
+                        except Exception:
+                            pass
+            finally:
+                for cli in clients:
                     try:
-                        results.extend(fut.result())
+                        cli.close()
                     except Exception:
                         pass
-        finally:
-            for cli in clients:
-                try:
-                    cli.close()
-                except Exception:
-                    pass
+        
+        # Gerar links de afiliado em lote via API para todos os itens
+        urls_to_generate = [item.get("url_base") for item in results if item.get("url_base")]
+        if urls_to_generate:
+            affiliate_map = self._generate_affiliate_links_batch(urls_to_generate)
+            for item in results:
+                url_base = item.get("url_base")
+                if url_base and url_base in affiliate_map:
+                    item["url_afiliado_curta"] = affiliate_map[url_base]
+        
         return results
 
     # ====================== Helpers de parsing ======================
