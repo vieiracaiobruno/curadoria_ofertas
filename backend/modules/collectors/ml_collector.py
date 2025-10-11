@@ -174,10 +174,8 @@ class MLCollector(BaseCollector):
         item["desconto"] = self._extract_discount(data)
         item["nome_produto"] = self._extract_product_name(data)
         item["imagem_url"] = self._extract_product_image(data)
-        
-        # No modo HTTP: seller_score vem do JSON (reputation_level)
-        item["seller_score"] = self._extract_seller_score_from_json(data)
-        
+        item["seller_score"] = self._extract_seller_score(data)
+                
         # No modo HTTP: não extrai url_afiliado_curta e ganho_real
         item["ganho_real"] = None
         item["url_afiliado_curta"] = None
@@ -206,8 +204,8 @@ class MLCollector(BaseCollector):
         item["desconto"] = self._extract_discount(data)
         item["nome_produto"] = self._extract_product_name(data)
         item["imagem_url"] = self._extract_product_image(data)
-        # Extrai dados adicionais que nao estão no JSON
         item["seller_score"] = self._extract_seller_score(soup)
+        # Extrai dados adicionais que nao estão no JSON
         item["ganho_real"] = self._extract_ganho_real(soup)
         item["url_afiliado_curta"] = client.get_short_affiliate_url(soup, delay=self.delay_sec) or None
         return item
@@ -523,7 +521,7 @@ class MLCollector(BaseCollector):
         except Exception:
             return None
 
-    def _extract_seller_score_from_json(self, data: Optional[dict]) -> Optional[int]:
+    def _extract_seller_score(self, data: Optional[dict]) -> Optional[int]:
         """
         Extrai o seller_score a partir do campo reputation_level do JSON.
         O campo vem no formato "5_green", "4_yellow", etc.
@@ -550,27 +548,6 @@ class MLCollector(BaseCollector):
             pass
         
         return None
-
-    def _extract_seller_score(self, soup: BeautifulSoup) -> Optional[int]:
-        candidates = soup.find_all("ul")
-        best = None
-        for ul in candidates:
-            cls = ul.get("class") or []
-            cls_set = set(cls)
-            if "ui-seller-data-status__thermometer" in cls_set and "thermometer-large" in cls_set:
-                best = ul
-                break
-            if "ui-seller-data-status__thermometer" in cls_set and best is None:
-                best = ul
-            if any("thermometer" in c for c in cls_set) and best is None:
-                best = ul
-        if not best:
-            return None
-        raw_val = best.get("value") or best.get("data-value") or ""
-        try:
-            return int(raw_val)
-        except Exception:
-            return None
 
     def _extract_ganho_real(self, soup: BeautifulSoup) -> Optional[float]:
         if not soup:
