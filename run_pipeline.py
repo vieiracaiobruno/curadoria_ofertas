@@ -19,7 +19,8 @@ sys.path.insert(0, project_root)
 
 from backend.db.database import SessionLocal
 from backend.modules.collectors.ml_collector import MLCollector
-from backend.modules.services.offer_processor import OfferProcessor
+from backend.modules.services.link_service import LinkService
+from backend.modules.services.link_parser import LinkParser
 from backend.modules.validator import Validator
 from backend.modules.publisher import Publisher
 from backend.modules.metrics_analyzer import MetricsAnalyzer
@@ -39,33 +40,46 @@ class RunPipeline:
         try:
             logging.info("=== Iniciando Pipeline (classe) de Curadoria de Ofertas ===")
 
-            # 1) Coleta (Mercado Livre)
-            logging.info("Iniciando coleta (Mercado Livre / Selenium)…")
+            # 1) Coleta de Links (Mercado Livre)
+            logging.info("Fase 1: Coletando links (Mercado Livre / Selenium)…")
             ml_collector = MLCollector()
-            items = ml_collector.run_collection()
-            logging.info(f"Coleta concluída. Itens extraídos: {len(items)}")
+            links = ml_collector.run_collection()
+            logging.info(f"Coleta de links concluída. Links encontrados: {len(links)}")
 
-            # 2) Processamento/Persistência (estrutura de ofertas)
-            logging.info("Processando itens (persistência/estrutura de ofertas)…")
-            processor = OfferProcessor(self.db)
-            for it in items:
-                processor.process_item(it)
-            logging.info(f"Processamento concluído. Stats: {processor.stats}")
+            # 2) Persistência dos Links
+            logging.info("Fase 2: Salvando links na tabela links_coleta…")
+            link_service = LinkService(self.db)
+            inserted = link_service.save_links(links, source="mercadolivre")
+            logging.info(f"Links salvos: {inserted} novos, {len(links) - inserted} já existiam")
 
-            # 3) Validação — mantém sua lógica atual
-            logging.info("Iniciando validação…")
+            # 3) Limpeza de Links Expirados (TTL)
+            logging.info("Fase 3: Limpando links expirados (TTL 24h)…")
+            expired = link_service.cleanup_expired_links(ttl_hours=24)
+            logging.info(f"Links expirados removidos: {expired}")
+
+            # 4) Parsing Paralelo de Links Ativos
+            logging.info("Fase 4: Parsing paralelo de links ativos…")
+            link_parser = LinkParser(self.db)
+            try:
+                parse_stats = link_parser.parse_active_links(source="mercadolivre")
+                logging.info(f"Parsing concluído. Stats: {parse_stats}")
+            finally:
+                link_parser.cleanup()
+
+            # 5) Validação — mantém sua lógica atual
+            logging.info("Fase 5: Validação de ofertas…")
             validator = Validator(self.db)
             validator.run_validation()
             logging.info("Validação concluída.")
 
-            # 4) Publicação — mantém sua lógica atual
-            logging.info("Iniciando publicação…")
+            # 6) Publicação — mantém sua lógica atual
+            logging.info("Fase 6: Publicação de ofertas…")
             publisher = Publisher(self.db)
             publisher.run_publication()
             logging.info("Publicação concluída.")
 
-            # 5) Métricas — mantém sua lógica atual
-            logging.info("Iniciando análise de métricas…")
+            # 7) Métricas — mantém sua lógica atual
+            logging.info("Fase 7: Análise de métricas…")
             metrics_analyzer = MetricsAnalyzer(self.db)
             metrics_analyzer.analyze_metrics()
             logging.info("Análise de métricas concluída.")

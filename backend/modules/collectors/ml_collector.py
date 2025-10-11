@@ -537,17 +537,33 @@ class MLCollector(BaseCollector):
 
     # ====================== API principal ======================
     def run_collection(self) -> List[Dict]:
-        results: List[dict] = []
-        offers: List[dict] = []
+        """
+        Coleta apenas os links das páginas de ofertas.
+        Não faz parsing detalhado - isso será feito posteriormente.
+        """
+        links: List[dict] = []
         try:
             for page in range(1, self.max_pages + 1):
                 html = self._fetch_ml_ofertas_page(page)
-                page_offers = self._parse_ml_offers(html)
-                offers += page_offers  # concatena os resultados de cada página
+                page_links = self._parse_ml_offers(html)
+                links += page_links
             self.close()
-            if offers:
-                enriched_batch = self._enrich_parallel(offers)
-                results.extend(enriched_batch)
         except Exception as e:
             print(f"Erro durante a coleta: {e}")
-        return results
+        return links
+    
+    def parse_link(self, url: str) -> Dict:
+        """
+        Faz o parsing detalhado de um único link.
+        Usado pela fase de parsing paralelo.
+        """
+        item = {
+            "source": "mercadolivre",
+            "url_base": url,
+        }
+        try:
+            enriched = self._enrich_with_client(self.selenium_profile, item)
+            return enriched
+        except Exception as e:
+            print(f"Erro ao fazer parse do link {url}: {e}")
+            raise

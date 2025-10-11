@@ -161,6 +161,21 @@ class ConfigVar(Base):
     description = Column(String, nullable=True)    # dica/ajuda na UI
     updated_at = Column(DateTime, default=datetime.now, nullable=False)
 
+class LinkColeta(Base):
+    __tablename__ = "links_coleta"
+    __table_args__ = (
+        UniqueConstraint("url", "source", name="uq_links_coleta_url_source"),
+        {'extend_existing': True}
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    url = Column(String, nullable=False, index=True)
+    source = Column(String, nullable=False, index=True)  # ex: "mercadolivre", "amazon"
+    ativo = Column(Boolean, default=True, nullable=False, index=True)
+    criado_em = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    parseado_em = Column(DateTime, nullable=True)
+    tentativas = Column(Integer, default=0, nullable=False)
+    ultimo_erro = Column(String, nullable=True)
+
 class LogColeta(Base):
     __tablename__ = "logs_coleta"
     __table_args__ = {'extend_existing': True}
