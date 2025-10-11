@@ -9,6 +9,7 @@ import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 from bs4 import BeautifulSoup
+import requests
 # Selenium (para clicar no botão Compartilhar)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -44,6 +45,7 @@ class MLCollector(BaseCollector):
         user_data_dir: Optional[str] = None,
         profile_dir: Optional[str] = None,
         detach: bool = False,
+        use_selenium: Optional[bool] = None,
     ):
         self.max_pages = int(get_config("ML_MAX_PAGES", "1"))
         self.delay_sec = float(get_config("ML_REQUEST_DELAY_SEC", "2"))
@@ -53,7 +55,30 @@ class MLCollector(BaseCollector):
         self._base_user_data_dir = user_data_dir
         self._base_profile_dir = profile_dir
         self._base_detach = detach
-        self._init_selenium(selenium_client, user_data_dir, profile_dir, detach)
+        # Determinar se deve usar Selenium (padrão True)
+        if use_selenium is None:
+            use_selenium_str = get_config("USE_SELENIUM", "true")
+            self.use_selenium = use_selenium_str.lower() in ("true", "1", "yes", "sim")
+        else:
+            self.use_selenium = use_selenium
+        # Inicializar Selenium apenas se necessário
+        if self.use_selenium:
+            self._init_selenium(selenium_client, user_data_dir, profile_dir, detach)
+        else:
+            # Configurar headers para requisições HTTP
+            self._http_headers = {
+                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
+                'cache-control': 'max-age=0',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+            }
+            self._cookies = {
+                '_d2id': '9b442ab8-dd44-4047-822f-6607b138f00f-n',
+                '_mldataSessionId': '0524ed0c-e29c-46c2-b455-0cc59f53342a',
+                '_csrf': 'D_7jfp4B21j-xj5KRDhjegGn',
+                'c_ui-navigation': '6.6.152',
+                'c_vpp': '1.162.0'
+            }
 
     def _init_selenium(self, selenium_client, user_data_dir, profile_dir, detach):
         """
@@ -90,14 +115,15 @@ class MLCollector(BaseCollector):
                 pass
 
     def close(self):
-        try:
-            self.selenium_listing.close()
-        except Exception:
-            pass
-        try:
-            self.selenium_profile.close()
-        except Exception:
-            pass
+        if self.use_selenium:
+            try:
+                self.selenium_listing.close()
+            except Exception:
+                pass
+            try:
+                self.selenium_profile.close()
+            except Exception:
+                pass
 
     # ===== Pool helpers =====
     def _make_client(self) -> SeleniumClient:
@@ -120,6 +146,44 @@ class MLCollector(BaseCollector):
             pass
         return cli
 
+    def _enrich_with_http(self, item: dict) -> dict:
+        """Enriquece item usando HTTP direto (sem Selenium)"""
+        url = item.get("url_base") or ""
+        if not url:
+            return item
+        
+        print(f"Enriquecendo via HTTP: {url}")
+        try:
+            response = requests.get(url, headers=self._http_headers, cookies=self._cookies, timeout=15)
+            response.raise_for_status()
+            html = response.text
+            time.sleep(random.uniform(0.5, 1.5))
+        except Exception as e:
+            print(f"Erro ao buscar produto via HTTP {url}: {e}")
+            return item
+        
+        soup = BeautifulSoup(html, "html.parser")
+        data = self._extract__preloaded_json(soup)
+        
+        # Extrai dados adicionais do __PRELOADED_STATE__
+        item["store_name"] = self._extract_store_name(data)
+        item["seller_id"] = self._extract_seller_id(data)
+        item["id_product"] = self._extract_id_product(data)
+        item["preco_original"] = self._extract_price_before(data)
+        item["preco_oferta"] = self._extract_price_after(data)
+        item["desconto"] = self._extract_discount(data)
+        item["nome_produto"] = self._extract_product_name(data)
+        item["imagem_url"] = self._extract_product_image(data)
+        
+        # No modo HTTP: seller_score vem do JSON (reputation_level)
+        item["seller_score"] = self._extract_seller_score_from_json(data)
+        
+        # No modo HTTP: não extrai url_afiliado_curta e ganho_real
+        item["ganho_real"] = None
+        item["url_afiliado_curta"] = None
+        
+        return item
+    
     def _enrich_with_client(self, client: SeleniumClient, item: dict) -> dict:
         # Worker reentrante: usa driver com cookies do perfil logado
         url = item.get("url_base") or ""
@@ -156,9 +220,22 @@ class MLCollector(BaseCollector):
 
     def _enrich_parallel(self, offers: List[dict]) -> List[dict]:
         """
-        Paraleliza o enriquecimento em N workers, cada um com seu próprio driver efêmero
-        com cookies do perfil logado. Evita compartilhar WebDriver entre threads.
+        Paraleliza o enriquecimento em N workers.
+        No modo HTTP: usa requisições diretas sem Selenium.
+        No modo Selenium: cada worker usa seu próprio driver efêmero com cookies do perfil logado.
         """
+        if not self.use_selenium:
+            # Modo HTTP: enriquecimento sequencial (pode ser paralelizado no futuro se necessário)
+            out = []
+            for it in offers:
+                try:
+                    out.append(self._enrich_with_http(it))
+                except Exception as e:
+                    print(f"Erro ao enriquecer item via HTTP: {e}")
+                    out.append(it)
+            return out
+        
+        # Modo Selenium (existente)
         if self.max_enrich_workers <= 1 or len(offers) <= 1:
             # Sequencial usando o perfil logado diretamente
             out = []
@@ -446,6 +523,34 @@ class MLCollector(BaseCollector):
         except Exception:
             return None
 
+    def _extract_seller_score_from_json(self, data: Optional[dict]) -> Optional[int]:
+        """
+        Extrai o seller_score a partir do campo reputation_level do JSON.
+        O campo vem no formato "5_green", "4_yellow", etc.
+        Retorna apenas o primeiro número antes do underscore.
+        """
+        if not data or not isinstance(data, dict):
+            return None
+        
+        try:
+            node = data.get("pageState", {})
+            node = node.get("initialState", {})
+            node = node.get("components", {})
+            if isinstance(node, dict):
+                node = node.get("track", {})
+                node = node.get("melidata_event", {})
+                node = node.get("event_data", {})
+                reputation_level = node.get("reputation_level")
+                if reputation_level and isinstance(reputation_level, str):
+                    # Extrair apenas o primeiro número antes do underscore
+                    parts = reputation_level.split("_")
+                    if parts and parts[0].isdigit():
+                        return int(parts[0])
+        except Exception:
+            pass
+        
+        return None
+
     def _extract_seller_score(self, soup: BeautifulSoup) -> Optional[int]:
         candidates = soup.find_all("ul")
         best = None
@@ -508,7 +613,24 @@ class MLCollector(BaseCollector):
         return None
 
     # ====================== Extração (listagem e produto) ======================
+    def _fetch_ml_ofertas_page_http(self, page_num: int) -> str:
+        """Busca página de ofertas via HTTP direto (sem Selenium)"""
+        url = f"https://www.mercadolivre.com.br/ofertas?page={page_num}"
+        print(f"Buscando página de ofertas {page_num} via HTTP: {url}")
+        try:
+            response = requests.get(url, headers=self._http_headers, cookies=self._cookies, timeout=15)
+            response.raise_for_status()
+            time.sleep(random.uniform(0.5, 1.5))
+            return response.text
+        except Exception as e:
+            print(f"Erro ao buscar página {page_num} via HTTP: {e}")
+            return ""
+    
     def _fetch_ml_ofertas_page(self, page_num: int) -> str:
+        """Busca página de ofertas (Selenium ou HTTP dependendo da configuração)"""
+        if not self.use_selenium:
+            return self._fetch_ml_ofertas_page_http(page_num)
+        
         url = f"https://www.mercadolivre.com.br/ofertas?page={page_num}"
         # Usar o driver com perfil logado para evitar abrir uma nova janela não logada
         print(f"Buscando página de ofertas {page_num}: {url}")
@@ -540,6 +662,9 @@ class MLCollector(BaseCollector):
         results: List[dict] = []
         offers: List[dict] = []
         try:
+            mode = "Selenium" if self.use_selenium else "HTTP direto (sem Selenium)"
+            print(f"\n=== Modo de coleta: {mode} ===\n")
+            
             for page in range(1, self.max_pages + 1):
                 html = self._fetch_ml_ofertas_page(page)
                 page_offers = self._parse_ml_offers(html)
