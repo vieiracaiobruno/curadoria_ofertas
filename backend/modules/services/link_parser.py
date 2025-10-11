@@ -11,6 +11,7 @@ from backend.modules.services.link_service import LinkService
 from backend.modules.services.offer_processor import OfferProcessor
 from backend.modules.utils.config import get_config
 from backend.models.models import LinkColeta
+from backend.db.database import SessionLocal
 
 
 class LinkParser:
@@ -22,36 +23,12 @@ class LinkParser:
     def __init__(self, db_session):
         self.db = db_session
         self.link_service = LinkService(db_session)
-        self.offer_processor = OfferProcessor(db_session)
         self.max_workers = max(1, int(get_config("LINK_PARSER_WORKERS", "3")))
-        
-        # Mapeamento de sources para collectors
-        self._collectors = {}
-    
-    def _get_collector_for_source(self, source: str):
-        """
-        Retorna ou cria um collector apropriado para a origem.
-        
-        Args:
-            source: Identificador da origem (ex: "mercadolivre")
-        
-        Returns:
-            Instância do collector apropriado
-        """
-        if source not in self._collectors:
-            if source == "mercadolivre":
-                # Cada worker terá seu próprio collector
-                # Não compartilhamos entre threads
-                collector = MLCollector()
-                self._collectors[source] = collector
-            else:
-                raise ValueError(f"Source não suportada: {source}")
-        
-        return self._collectors[source]
     
     def _parse_single_link(self, link: LinkColeta) -> bool:
         """
         Faz o parsing de um único link.
+        Cria seu próprio collector e sessão de DB para thread-safety.
         
         Args:
             link: Objeto LinkColeta com url e source
@@ -59,27 +36,51 @@ class LinkParser:
         Returns:
             True se o parsing foi bem-sucedido
         """
+        collector = None
+        db_session = None
         try:
-            # Obtém o collector apropriado
-            collector = self._get_collector_for_source(link.source)
+            # Cria uma nova sessão de DB para esta thread
+            db_session = SessionLocal()
+            link_service = LinkService(db_session)
+            offer_processor = OfferProcessor(db_session)
+            
+            # Cria um collector específico para esta thread
+            if link.source == "mercadolivre":
+                collector = MLCollector()
+            else:
+                raise ValueError(f"Source não suportada: {link.source}")
             
             # Faz o parsing do link
             logging.info(f"Parsing link {link.id}: {link.url}")
             parsed_data = collector.parse_link(link.url)
             
             # Processa o item parseado
-            offer_created, outcome, product_created = self.offer_processor.process_item(parsed_data)
+            offer_created, outcome, product_created = offer_processor.process_item(parsed_data)
             
             # Marca como parseado com sucesso
-            self.link_service.mark_as_parsed(link.id)
+            link_service.mark_as_parsed(link.id)
             logging.info(f"Link {link.id} parseado com sucesso. Outcome: {outcome}")
             return True
             
         except Exception as e:
             error_msg = str(e)
             logging.error(f"Erro ao parsear link {link.id}: {error_msg}")
-            self.link_service.mark_as_failed(link.id, error_msg)
+            if db_session:
+                link_service = LinkService(db_session)
+                link_service.mark_as_failed(link.id, error_msg)
             return False
+        finally:
+            # Limpa recursos da thread
+            if collector:
+                try:
+                    collector.close()
+                except Exception:
+                    pass
+            if db_session:
+                try:
+                    db_session.close()
+                except Exception:
+                    pass
     
     def parse_active_links(self, source: Optional[str] = None, limit: Optional[int] = None) -> Dict:
         """
@@ -167,10 +168,5 @@ class LinkParser:
         return stats
     
     def cleanup(self):
-        """Limpa recursos (fecha collectors)."""
-        for collector in self._collectors.values():
-            try:
-                collector.close()
-            except Exception:
-                pass
-        self._collectors.clear()
+        """Limpa recursos (placeholder - cada thread limpa seus próprios recursos)."""
+        pass
