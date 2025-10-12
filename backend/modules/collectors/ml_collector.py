@@ -8,6 +8,7 @@ import random
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
+from urllib.parse import quote
 from bs4 import BeautifulSoup
 import requests
 # Selenium (para clicar no botão Compartilhar)
@@ -232,8 +233,8 @@ class MLCollector(BaseCollector):
         all_cookies = update_all_site_cookies(self._base_user_data_dir, self._base_profile_dir)
         ml_cookies = all_cookies.get("https://www.mercadolivre.com.br", {}).get("cookies", [])
         
-        # Converter cookies para formato de string
-        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in ml_cookies if 'name' in c and 'value' in c])
+        # Converter cookies para formato de string (URL-encode values to handle special characters)
+        cookie_str = "; ".join([f"{c['name']}={quote(str(c['value']))}" for c in ml_cookies if 'name' in c and 'value' in c])
         
         api_url = "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink"
         headers = {
@@ -256,13 +257,20 @@ class MLCollector(BaseCollector):
             response.raise_for_status()
             data = response.json()
             
-            # Mapear URL original -> short_url (importante: mapear usando as URLs originais, não as limpas)
+            # Mapear URL original -> short_url usando origin_url para garantir mapeamento correto
+            # Não presumir que a ordem do array de resposta é igual ao da requisição
             url_mapping = {}
-            for idx, item in enumerate(data.get("urls", [])):
+            clean_to_original = {self._clean_url(url): url for url in urls}
+            
+            for item in data.get("urls", []):
                 short_url = item.get("short_url")
-                if short_url and idx < len(urls):
+                origin_url = item.get("origin_url")
+                if short_url and origin_url:
                     # Mapear usando a URL original (com query params) como chave
-                    url_mapping[urls[idx]] = short_url
+                    # origin_url da API é a URL limpa, precisamos encontrar a URL original correspondente
+                    original_url = clean_to_original.get(origin_url)
+                    if original_url:
+                        url_mapping[original_url] = short_url
             
             print(f"  ✓ {len(url_mapping)} links de afiliado obtidos com sucesso")
             return url_mapping
