@@ -9,6 +9,7 @@ import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 from bs4 import BeautifulSoup
+import requests
 # Selenium (para clicar no botão Compartilhar)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -24,6 +25,58 @@ try:
 except Exception:
     from backend.modules.utils.config import get_config
     from backend.modules.utils.selenium_client import SeleniumClient
+
+
+# Lista de sites de coleta para exportar cookies
+COLLECTION_SITES = [
+    "https://www.mercadolivre.com.br"
+]
+
+
+def update_all_site_cookies(user_data_dir: Optional[str] = None, profile_dir: Optional[str] = None) -> Dict[str, dict]:
+    """
+    Função genérica para atualizar cookies de todos os sites de coleta.
+    Abre uma sessão do Chrome com o perfil logado, navega em cada site e exporta os cookies.
+    
+    Args:
+        user_data_dir: Diretório de dados do usuário do Chrome
+        profile_dir: Diretório do perfil do Chrome
+        
+    Returns:
+        Dict com os cookies exportados de cada site: {url: {cookies: [...], localStorage: {...}}}
+    """
+    from backend.modules.utils.selenium_client import SeleniumClient
+    from backend.modules.utils.config import get_config
+    
+    user_data = (get_config("SELENIUM_USER_DATA_DIR", user_data_dir or "") or "").strip()
+    profile = (get_config("SELENIUM_PROFILE_DIR", profile_dir or "") or "").strip()
+    
+    print(f"Abrindo sessão do Chrome com perfil logado para exportar cookies...")
+    selenium_client = SeleniumClient(
+        user_data_dir=user_data,
+        profile_dir=profile,
+        detach=False,
+        log_error=None,
+    )
+    
+    all_cookies = {}
+    try:
+        for site_url in COLLECTION_SITES:
+            print(f"  Exportando cookies de: {site_url}")
+            try:
+                session_state = selenium_client.export_session_state(site_url)
+                all_cookies[site_url] = session_state
+                print(f"    ✓ {len(session_state.get('cookies', []))} cookies exportados")
+            except Exception as e:
+                print(f"    ✗ Erro ao exportar cookies de {site_url}: {e}")
+                all_cookies[site_url] = {"cookies": [], "localStorage": {}}
+    finally:
+        try:
+            selenium_client.close()
+        except Exception:
+            pass
+    
+    return all_cookies
 
 
 class MLCollector(BaseCollector):
@@ -44,6 +97,7 @@ class MLCollector(BaseCollector):
         user_data_dir: Optional[str] = None,
         profile_dir: Optional[str] = None,
         detach: bool = False,
+        use_selenium: Optional[bool] = None,
     ):
         self.max_pages = int(get_config("ML_MAX_PAGES", "1"))
         self.delay_sec = float(get_config("ML_REQUEST_DELAY_SEC", "2"))
@@ -53,7 +107,30 @@ class MLCollector(BaseCollector):
         self._base_user_data_dir = user_data_dir
         self._base_profile_dir = profile_dir
         self._base_detach = detach
-        self._init_selenium(selenium_client, user_data_dir, profile_dir, detach)
+        # Determinar se deve usar Selenium (padrão True)
+        if use_selenium is None:
+            use_selenium_str = get_config("USE_SELENIUM", "true")
+            self.use_selenium = use_selenium_str.lower() in ("true", "1", "yes", "sim")
+        else:
+            self.use_selenium = use_selenium
+        # Inicializar Selenium apenas se necessário
+        if self.use_selenium:
+            self._init_selenium(selenium_client, user_data_dir, profile_dir, detach)
+        else:
+            # Configurar headers para requisições HTTP
+            self._http_headers = {
+                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
+                'cache-control': 'max-age=0',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+            }
+            self._cookies = {
+                '_d2id': '9b442ab8-dd44-4047-822f-6607b138f00f-n',
+                '_mldataSessionId': '0524ed0c-e29c-46c2-b455-0cc59f53342a',
+                '_csrf': 'D_7jfp4B21j-xj5KRDhjegGn',
+                'c_ui-navigation': '6.6.152',
+                'c_vpp': '1.162.0'
+            }
 
     def _init_selenium(self, selenium_client, user_data_dir, profile_dir, detach):
         """
@@ -90,14 +167,15 @@ class MLCollector(BaseCollector):
                 pass
 
     def close(self):
-        try:
-            self.selenium_listing.close()
-        except Exception:
-            pass
-        try:
-            self.selenium_profile.close()
-        except Exception:
-            pass
+        if self.use_selenium:
+            try:
+                self.selenium_listing.close()
+            except Exception:
+                pass
+            try:
+                self.selenium_profile.close()
+            except Exception:
+                pass
 
     # ===== Pool helpers =====
     def _make_client(self) -> SeleniumClient:
@@ -120,6 +198,117 @@ class MLCollector(BaseCollector):
             pass
         return cli
 
+    def _clean_url(self, url: str) -> str:
+        """
+        Remove parâmetros de query da URL, mantendo apenas a URL base do produto.
+        Ex: https://produto.mercadolivre.com.br/MLB-123-produto_JM?searchVariation=123#extras
+            -> https://produto.mercadolivre.com.br/MLB-123-produto_JM
+        """
+        if not url:
+            return url
+        # Remove fragment (#...) e query parameters (?...)
+        url = url.split('#')[0].split('?')[0]
+        return url
+    
+    def _get_affiliate_links_batch(self, urls: List[str], tag: str = "promocoesdahora") -> Dict[str, str]:
+        """
+        Chama a API do Mercado Livre para obter links de afiliado curtos em lote.
+        
+        Args:
+            urls: Lista de URLs de produtos
+            tag: Tag do afiliado
+            
+        Returns:
+            Dict mapeando origin_url -> short_url (usando URLs originais como chave)
+        """
+        if not urls:
+            return {}
+        
+        # Limpar URLs antes de enviar
+        clean_urls = [self._clean_url(url) for url in urls]
+        
+        # Atualizar cookies antes de fazer a chamada
+        print(f"Atualizando cookies para API de afiliados...")
+        all_cookies = update_all_site_cookies(self._base_user_data_dir, self._base_profile_dir)
+        ml_cookies = all_cookies.get("https://www.mercadolivre.com.br", {}).get("cookies", [])
+        
+        # Converter cookies para formato de string
+        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in ml_cookies if 'name' in c and 'value' in c])
+        
+        api_url = "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink"
+        headers = {
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
+            'content-type': 'application/json',
+            'origin': 'https://www.mercadolivre.com.br',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+            'Cookie': cookie_str
+        }
+        
+        body = {
+            "urls": clean_urls,
+            "tag": tag
+        }
+        
+        print(f"Chamando API de afiliados para {len(clean_urls)} URLs...")
+        try:
+            response = requests.post(api_url, headers=headers, json=body, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Mapear URL original -> short_url (importante: mapear usando as URLs originais, não as limpas)
+            url_mapping = {}
+            for idx, item in enumerate(data.get("urls", [])):
+                short_url = item.get("short_url")
+                if short_url and idx < len(urls):
+                    # Mapear usando a URL original (com query params) como chave
+                    url_mapping[urls[idx]] = short_url
+            
+            print(f"  ✓ {len(url_mapping)} links de afiliado obtidos com sucesso")
+            return url_mapping
+            
+        except Exception as e:
+            print(f"  ✗ Erro ao chamar API de afiliados: {e}")
+            return {}
+    
+    def _enrich_with_http(self, item: dict) -> dict:
+        """Enriquece item usando HTTP direto (sem Selenium)"""
+        url = item.get("url_base") or ""
+        if not url:
+            return item
+        
+        print(f"Enriquecendo via HTTP: {url}")
+        try:
+            response = requests.get(url, headers=self._http_headers, cookies=self._cookies, timeout=15)
+            response.raise_for_status()
+            html = response.text
+            time.sleep(random.uniform(0.5, 1.5))
+        except Exception as e:
+            print(f"Erro ao buscar produto via HTTP {url}: {e}")
+            return item
+        
+        soup = BeautifulSoup(html, "html.parser")
+        data = self._extract__preloaded_json(soup)
+        
+        # Extrai dados adicionais do __PRELOADED_STATE__
+        item["store_name"] = self._extract_store_name(data)
+        item["seller_id"] = self._extract_seller_id(data)
+        item["id_product"] = self._extract_id_product(data)
+        item["preco_original"] = self._extract_price_before(data)
+        item["preco_oferta"] = self._extract_price_after(data)
+        item["desconto"] = self._extract_discount(data)
+        item["nome_produto"] = self._extract_product_name(data)
+        item["imagem_url"] = self._extract_product_image(data)
+        item["seller_score"] = self._extract_seller_score(data)
+        
+        # Extrai ganho_real do HTML
+        item["ganho_real"] = self._extract_ganho_real(soup)
+        
+        # url_afiliado_curta será preenchido em lote posteriormente
+        item["url_afiliado_curta"] = None
+        
+        return item
+    
     def _enrich_with_client(self, client: SeleniumClient, item: dict) -> dict:
         # Worker reentrante: usa driver com cookies do perfil logado
         url = item.get("url_base") or ""
@@ -142,8 +331,8 @@ class MLCollector(BaseCollector):
         item["desconto"] = self._extract_discount(data)
         item["nome_produto"] = self._extract_product_name(data)
         item["imagem_url"] = self._extract_product_image(data)
-        # Extrai dados adicionais que nao estão no JSON
         item["seller_score"] = self._extract_seller_score(soup)
+        # Extrai dados adicionais que nao estão no JSON
         item["ganho_real"] = self._extract_ganho_real(soup)
         item["url_afiliado_curta"] = client.get_short_affiliate_url(soup, delay=self.delay_sec) or None
         return item
@@ -156,9 +345,34 @@ class MLCollector(BaseCollector):
 
     def _enrich_parallel(self, offers: List[dict]) -> List[dict]:
         """
-        Paraleliza o enriquecimento em N workers, cada um com seu próprio driver efêmero
-        com cookies do perfil logado. Evita compartilhar WebDriver entre threads.
+        Paraleliza o enriquecimento em N workers.
+        No modo HTTP: usa requisições diretas sem Selenium.
+        No modo Selenium: cada worker usa seu próprio driver efêmero com cookies do perfil logado.
         """
+        if not self.use_selenium:
+            # Modo HTTP: enriquecimento sequencial (pode ser paralelizado no futuro se necessário)
+            out = []
+            for it in offers:
+                try:
+                    out.append(self._enrich_with_http(it))
+                except Exception as e:
+                    print(f"Erro ao enriquecer item via HTTP: {e}")
+                    out.append(it)
+            
+            # Após enriquecer todos os itens, buscar links de afiliado em lote
+            print(f"\n=== Buscando links de afiliado em lote para {len(out)} itens ===")
+            urls_to_fetch = [item["url_base"] for item in out if item.get("url_base")]
+            if urls_to_fetch:
+                affiliate_mapping = self._get_affiliate_links_batch(urls_to_fetch)
+                # Atualizar os itens com os links de afiliado
+                for item in out:
+                    url_base = item.get("url_base")
+                    if url_base and url_base in affiliate_mapping:
+                        item["url_afiliado_curta"] = affiliate_mapping[url_base]
+            
+            return out
+        
+        # Modo Selenium (existente)
         if self.max_enrich_workers <= 1 or len(offers) <= 1:
             # Sequencial usando o perfil logado diretamente
             out = []
@@ -446,26 +660,33 @@ class MLCollector(BaseCollector):
         except Exception:
             return None
 
-    def _extract_seller_score(self, soup: BeautifulSoup) -> Optional[int]:
-        candidates = soup.find_all("ul")
-        best = None
-        for ul in candidates:
-            cls = ul.get("class") or []
-            cls_set = set(cls)
-            if "ui-seller-data-status__thermometer" in cls_set and "thermometer-large" in cls_set:
-                best = ul
-                break
-            if "ui-seller-data-status__thermometer" in cls_set and best is None:
-                best = ul
-            if any("thermometer" in c for c in cls_set) and best is None:
-                best = ul
-        if not best:
+    def _extract_seller_score(self, data: Optional[dict]) -> Optional[int]:
+        """
+        Extrai o seller_score a partir do campo reputation_level do JSON.
+        O campo vem no formato "5_green", "4_yellow", etc.
+        Retorna apenas o primeiro número antes do underscore.
+        """
+        if not data or not isinstance(data, dict):
             return None
-        raw_val = best.get("value") or best.get("data-value") or ""
+        
         try:
-            return int(raw_val)
+            node = data.get("pageState", {})
+            node = node.get("initialState", {})
+            node = node.get("components", {})
+            if isinstance(node, dict):
+                node = node.get("track", {})
+                node = node.get("melidata_event", {})
+                node = node.get("event_data", {})
+                reputation_level = node.get("reputation_level")
+                if reputation_level and isinstance(reputation_level, str):
+                    # Extrair apenas o primeiro número antes do underscore
+                    parts = reputation_level.split("_")
+                    if parts and parts[0].isdigit():
+                        return int(parts[0])
         except Exception:
-            return None
+            pass
+        
+        return None
 
     def _extract_ganho_real(self, soup: BeautifulSoup) -> Optional[float]:
         if not soup:
@@ -508,7 +729,24 @@ class MLCollector(BaseCollector):
         return None
 
     # ====================== Extração (listagem e produto) ======================
+    def _fetch_ml_ofertas_page_http(self, page_num: int) -> str:
+        """Busca página de ofertas via HTTP direto (sem Selenium)"""
+        url = f"https://www.mercadolivre.com.br/ofertas?page={page_num}"
+        print(f"Buscando página de ofertas {page_num} via HTTP: {url}")
+        try:
+            response = requests.get(url, headers=self._http_headers, cookies=self._cookies, timeout=15)
+            response.raise_for_status()
+            time.sleep(random.uniform(0.5, 1.5))
+            return response.text
+        except Exception as e:
+            print(f"Erro ao buscar página {page_num} via HTTP: {e}")
+            return ""
+    
     def _fetch_ml_ofertas_page(self, page_num: int) -> str:
+        """Busca página de ofertas (Selenium ou HTTP dependendo da configuração)"""
+        if not self.use_selenium:
+            return self._fetch_ml_ofertas_page_http(page_num)
+        
         url = f"https://www.mercadolivre.com.br/ofertas?page={page_num}"
         # Usar o driver com perfil logado para evitar abrir uma nova janela não logada
         print(f"Buscando página de ofertas {page_num}: {url}")
@@ -540,6 +778,9 @@ class MLCollector(BaseCollector):
         results: List[dict] = []
         offers: List[dict] = []
         try:
+            mode = "Selenium" if self.use_selenium else "HTTP direto (sem Selenium)"
+            print(f"\n=== Modo de coleta: {mode} ===\n")
+            
             for page in range(1, self.max_pages + 1):
                 html = self._fetch_ml_ofertas_page(page)
                 page_offers = self._parse_ml_offers(html)

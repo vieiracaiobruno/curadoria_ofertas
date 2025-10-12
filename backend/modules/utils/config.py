@@ -5,10 +5,14 @@ from backend.db.database import SessionLocal
 from backend.models.models import ConfigVar
 
 def get_config(key: str, default: str | None = None) -> str | None:
-    with SessionLocal() as db:
-        row = db.query(ConfigVar).filter(ConfigVar.key == key).first()
-        if row and row.value is not None:
-            return row.value
+    try:
+        with SessionLocal() as db:
+            row = db.query(ConfigVar).filter(ConfigVar.key == key).first()
+            if row and row.value is not None:
+                return row.value
+    except Exception:
+        # Se a tabela não existir ou houver erro de DB, usar variável de ambiente
+        pass
     return os.getenv(key, default)
 
 def set_config(key: str, value: str | None, is_secret: bool = True, description: str | None = None):

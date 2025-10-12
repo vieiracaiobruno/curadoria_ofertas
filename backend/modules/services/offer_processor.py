@@ -242,10 +242,17 @@ class OfferProcessor:
         self.stats["processed_total"] += 1
 
         # Lista dos campos obrigatórios extraídos pelo collector
+        #required_fields = [
+        #    "url_base", "id_product", "seller_id", "store_name", "preco_original",
+        #    "preco_oferta", "desconto", "nome_produto", "imagem_url",
+        #    "seller_score", "ganho_real", "url_afiliado_curta"
+        #]
+
+        # Lista dos campos obrigatórios extraídos pelo collector
         required_fields = [
             "url_base", "id_product", "seller_id", "store_name", "preco_original",
             "preco_oferta", "desconto", "nome_produto", "imagem_url",
-            "seller_score", "ganho_real", "url_afiliado_curta"
+            "seller_score"
         ]
 
         # Validação mínima
