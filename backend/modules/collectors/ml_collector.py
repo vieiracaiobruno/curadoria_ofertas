@@ -68,11 +68,8 @@ class MLCollector(BaseCollector):
             #delay_sec=self.delay_sec,
             log_error=None,
         )
-        try:
-            # Exporta cookies + localStorage do perfil logado
-            self._session_state = self.selenium_profile.export_session_state("https://www.mercadolivre.com.br")
-        except Exception:
-            self._session_state = {"cookies": [], "localStorage": {}}
+        # Inicializa com estado vazio; será atualizado no início de run_collection
+        self._session_state = {"cookies": [], "localStorage": {}}
 
         # Listagem (não usa perfil logado para evitar lock)
         self.selenium_listing = SeleniumClient(
@@ -82,12 +79,6 @@ class MLCollector(BaseCollector):
             #delay_sec=self.delay_sec,
             log_error=None,
         )
-        # Opcional ainda importar no listing (não obrigatório)
-        if self._session_state.get("cookies"):
-            try:
-                self.selenium_listing.import_session_state("https://www.mercadolivre.com.br", self._session_state)
-            except Exception:
-                pass
 
     def close(self):
         try:
@@ -540,6 +531,22 @@ class MLCollector(BaseCollector):
         results: List[dict] = []
         offers: List[dict] = []
         try:
+            # Atualiza cookies ANTES de coletar links (primeira ação do fluxo de coleta)
+            print("Atualizando cookies do perfil logado...")
+            try:
+                self._session_state = self.selenium_profile.export_session_state("https://www.mercadolivre.com.br")
+            except Exception as e:
+                print(f"Aviso: Falha ao exportar cookies: {e}")
+                self._session_state = {"cookies": [], "localStorage": {}}
+            
+            # Importa cookies atualizados no cliente de listagem
+            if self._session_state.get("cookies"):
+                try:
+                    self.selenium_listing.import_session_state("https://www.mercadolivre.com.br", self._session_state)
+                    print("Cookies atualizados com sucesso.")
+                except Exception as e:
+                    print(f"Aviso: Falha ao importar cookies no selenium_listing: {e}")
+            
             for page in range(1, self.max_pages + 1):
                 html = self._fetch_ml_ofertas_page(page)
                 page_offers = self._parse_ml_offers(html)
