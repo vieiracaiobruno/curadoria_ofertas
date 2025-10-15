@@ -137,19 +137,34 @@ def dashboard():
 @app.route("/ofertas/publicadas")
 @login_required
 def ofertas_publicadas():
+    from backend.models.models import OfertaPublicada
     with SessionLocal() as db:
-        ofertas = (
-            db.query(Oferta)
+        # Busca os registros de OfertaPublicada que contêm snapshot dos dados
+        ofertas_publicadas = (
+            db.query(OfertaPublicada)
               .options(
-                  joinedload(Oferta.produto).options(selectinload(Produto.tags)),
-                  joinedload(Oferta.loja),
-                  selectinload(Oferta.metricas)
+                  joinedload(OfertaPublicada.oferta).selectinload(Oferta.produto).selectinload(Produto.tags),
+                  joinedload(OfertaPublicada.canal)
               )
-              .filter(Oferta.status == "PUBLICADO")
-              .order_by(Oferta.data_publicacao.desc())
+              .order_by(OfertaPublicada.data_publicacao.desc())
               .all()
         )
-    return render_template("ofertas_publicadas.html", ofertas=ofertas)
+        
+        # Agrupa por oferta_id para mostrar todos os canais
+        from collections import defaultdict
+        canais_por_oferta = defaultdict(list)
+        ofertas_dict = {}
+        for op in ofertas_publicadas:
+            canais_por_oferta[op.oferta_id].append(op.canal_nome or (op.canal.nome_amigavel if op.canal else "—"))
+            if op.oferta_id not in ofertas_dict:
+                ofertas_dict[op.oferta_id] = op
+        
+        # Lista única de ofertas publicadas
+        ofertas_unicas = list(ofertas_dict.values())
+        
+    return render_template("ofertas_publicadas.html", 
+                         ofertas=ofertas_unicas, 
+                         canais_por_oferta=dict(canais_por_oferta))
 
 @app.route("/configuracoes")
 @login_required

@@ -25,46 +25,45 @@
         </tr>
       </thead>
       <tbody>
-        {% for oferta in ofertas %}
-        {% set p = oferta.produto %}
+        {% for oferta_pub in ofertas %}
         <tr>
           <td style="width:80px;">
-            {% if p and p.imagem_url %}
-              <img src="{{ p.imagem_url }}" alt="img" style="max-width:70px;max-height:70px;">
+            {% if oferta_pub.imagem_url %}
+              <img src="{{ oferta_pub.imagem_url }}" alt="img" style="max-width:70px;max-height:70px;">
             {% else %}
               <span class="text-muted small">—</span>
             {% endif %}
           </td>
           <td>
-            {{ p.nome_produto if p else '—' }}
+            {{ oferta_pub.nome_produto or '—' }}
           </td>
           <td>
-            {{ oferta.loja.nome_loja if oferta.loja else '—' }}
+            {{ oferta_pub.nome_loja or '—' }}
           </td>
           <td>
-            {% if p and p.preco_oferta is not none %}
-              R$ {{ '%.2f'|format(p.preco_oferta) }}
+            {% if oferta_pub.preco_oferta is not none %}
+              R$ {{ '%.2f'|format(oferta_pub.preco_oferta) }}
             {% else %}
               —
             {% endif %}
           </td>
           <td>
-            {% if p and p.preco_original %}
-              R$ {{ '%.2f'|format(p.preco_original) }}
+            {% if oferta_pub.preco_original %}
+              R$ {{ '%.2f'|format(oferta_pub.preco_original) }}
             {% else %}
               —
             {% endif %}
           </td>
           <td>
-            {% if p and p.desconto_real %}
-              {{ '%.0f'|format(p.desconto_real) }}%
+            {% if oferta_pub.desconto_real %}
+              {{ '%.0f'|format(oferta_pub.desconto_real) }}%
             {% else %}
               —
             {% endif %}
           </td>
           <td>
-            {% if p and p.tags %}
-              {% for tag in p.tags %}
+            {% if oferta_pub.oferta and oferta_pub.oferta.produto and oferta_pub.oferta.produto.tags %}
+              {% for tag in oferta_pub.oferta.produto.tags %}
                 <span class="badge bg-primary me-1">#{{ tag.nome_tag }}</span>
               {% endfor %}
             {% else %}
@@ -72,18 +71,20 @@
             {% endif %}
           </td>
           <td>
-            {% if canais_por_oferta and canais_por_oferta.get(oferta.id) %}
-              {{ canais_por_oferta.get(oferta.id)|join(', ') }}
+            {% if canais_por_oferta and canais_por_oferta.get(oferta_pub.oferta_id) %}
+              {{ canais_por_oferta.get(oferta_pub.oferta_id)|join(', ') }}
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}
           </td>
           <td>
-            {{ oferta.data_publicacao.strftime('%d/%m/%Y %H:%M') if oferta.data_publicacao else '—' }}
+            {{ oferta_pub.data_publicacao.strftime('%d/%m/%Y %H:%M') if oferta_pub.data_publicacao else '—' }}
           </td>
           <td>
-            {% if p and p.url_base %}
-              <a href="{{ p.url_base }}" target="_blank" class="btn btn-sm btn-outline-primary">Ver</a>
+            {% if oferta_pub.url_afiliado_curta %}
+              <a href="{{ oferta_pub.url_afiliado_curta }}" target="_blank" class="btn btn-sm btn-outline-primary">Ver</a>
+            {% elif oferta_pub.oferta and oferta_pub.oferta.produto and oferta_pub.oferta.produto.url_base %}
+              <a href="{{ oferta_pub.oferta.produto.url_base }}" target="_blank" class="btn btn-sm btn-outline-primary">Ver</a>
             {% else %}
               —
             {% endif %}
