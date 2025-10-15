@@ -64,7 +64,7 @@ class MetricsAnalyzer:
 
         for oferta in ofertas_publicadas:
             # Pega o link curto do Bitly
-            bitly_link = oferta.url_afiliado_curta
+            bitly_link = oferta.produto.url_afiliado_curta if oferta.produto else None
             if not bitly_link:
                 print(f"Oferta {oferta.id} não possui link Bitly. Pulando métricas.")
                 continue
