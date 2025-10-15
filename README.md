@@ -5,6 +5,8 @@ Um sistema automatizado para coleta, validação e publicação de ofertas em ca
 ## Funcionalidades
 
 - **Coleta Automatizada**: Raspagem de ofertas de lojas confiáveis (Amazon, Mercado Livre)
+  - 🚀 **Novo**: Modo HTTP direto (sem Selenium) para coleta mais rápida e leve
+  - 🎯 Modo Selenium tradicional para dados completos
 - **Validação Inteligente**: Sistema de aprovação/rejeição baseado em critérios configuráveis
 - **Publicação Automática**: Envio de ofertas aprovadas para canais do Telegram
 - **Painel de Controle**: Interface web para gerenciamento de ofertas e configurações
@@ -97,7 +99,32 @@ RESULTS_FILE=./logs/pipeline_results.json
 # Telegram Configuration
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 TELEGRAM_CHANNEL_ID=your-channel-id
+
+# Mercado Livre Collector Configuration
+USE_SELENIUM=true              # true = Selenium mode (default), false = HTTP mode
+ML_MAX_PAGES=3                 # Number of pages to collect
+ML_REQUEST_DELAY_SEC=2         # Delay between requests
+ML_ENRICH_WORKERS=1            # Parallel workers for enrichment
 ```
+
+### 🚀 Modo de Coleta: Selenium vs HTTP
+
+O sistema agora suporta dois modos de coleta do Mercado Livre:
+
+**Modo Selenium (padrão - `USE_SELENIUM=true`)**
+- ✅ Extrai todos os campos incluindo ganho_real e url_afiliado_curta
+- ✅ Suporta JavaScript e conteúdo dinâmico
+- ⚠️ Mais lento e consome mais recursos
+- ⚠️ Requer Chrome instalado
+
+**Modo HTTP (`USE_SELENIUM=false`)**
+- ✅ 5x mais rápido que Selenium
+- ✅ 10x menos memória
+- ✅ Não requer Chrome
+- ✅ Mais difícil de ser detectado como bot
+- ⚠️ Não extrai ganho_real nem url_afiliado_curta
+
+📖 **Documentação completa**: Veja [SELENIUM_TOGGLE_GUIDE.md](SELENIUM_TOGGLE_GUIDE.md) para detalhes
 
 ### Configuração do Telegram
 
@@ -176,6 +203,8 @@ O sistema utiliza as seguintes entidades principais:
 2. **Erro de banco**: Execute `create_db_tables()` novamente
 3. **Erro de Telegram**: Verifique token e permissões do bot
 4. **Erro de permissão**: Verifique se o diretório logs/ existe
+5. **Selenium muito lento**: Tente usar `USE_SELENIUM=false` para modo HTTP
+6. **Chrome não instalado**: Use `USE_SELENIUM=false` para coletar sem Selenium
 
 ### Logs
 
