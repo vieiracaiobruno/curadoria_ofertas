@@ -158,11 +158,8 @@ class MLCollector(BaseCollector):
             #delay_sec=self.delay_sec,
             log_error=None,
         )
-        try:
-            # Exporta cookies + localStorage do perfil logado
-            self._session_state = self.selenium_profile.export_session_state("https://www.mercadolivre.com.br")
-        except Exception:
-            self._session_state = {"cookies": [], "localStorage": {}}
+        # Inicializa com estado vazio; será atualizado no início de run_collection
+        self._session_state = {"cookies": [], "localStorage": {}}
 
         # Listagem (não usa perfil logado para evitar lock)
         self.selenium_listing = SeleniumClient(
@@ -172,12 +169,6 @@ class MLCollector(BaseCollector):
             #delay_sec=self.delay_sec,
             log_error=None,
         )
-        # Opcional ainda importar no listing (não obrigatório)
-        if self._session_state.get("cookies"):
-            try:
-                self.selenium_listing.import_session_state("https://www.mercadolivre.com.br", self._session_state)
-            except Exception:
-                pass
 
     def close(self):
         if self.use_selenium:
