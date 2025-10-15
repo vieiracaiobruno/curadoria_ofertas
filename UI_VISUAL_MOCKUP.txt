@@ -1,0 +1,135 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         PRODUTOS PAGE - NEW UI                                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Produtos (127)                                        [1 por linha] [5 por linha] │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ ⚠️ Na fila          ⭐ Novo                     ✅ Postado                │ ← NEW!
+│                                                                            │
+│  ┌─────────┐                                                              │
+│  │         │  Mouse Gamer RGB Pro Ultra                                   │
+│  │  Image  │  Loja: TechStore Brasil                                      │
+│  │         │  Preço original: R$ 199,99                                   │
+│  └─────────┘  Preço real: R$ 99,99  50% OFF                              │
+│               Ganho real: 15%                                             │
+│               Tags: #gamer #informatica #perifericos                      │
+│                                                                            │
+│               📦 Adicionar tag... [+]                                     │
+│                                                                            │
+│  [🔗 Link] [🏪 Ativar loja] [📤 Oferta] [🗑️ Excluir]                 │ ← CHANGED!
+└────────────────────────────────────────────────────────────────────────────┘
+     ^           ^             ^
+     │           │             └─ NEW: Replaces "Manter", sends to approval queue
+     │           └─ UPDATED: Disabled when store is active
+     └─ Existing: Opens product URL
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ ⚠️ Na fila                                                                  │
+│                                                                            │
+│  ┌─────────┐                                                              │
+│  │         │  Fone Bluetooth XYZ                                          │
+│  │  Image  │  Loja: AudioShop (🔴 INACTIVE - button disabled)            │
+│  │         │  Preço real: R$ 49,99                                        │
+│  └─────────┘  Tags: #audio #bluetooth                                     │
+│                                                                            │
+│  [🔗 Link] [🏪 Ativar loja (disabled)] [📤 Oferta] [🗑️ Excluir]       │
+└────────────────────────────────────────────────────────────────────────────┘
+              ^
+              └─ DISABLED: Store is already active
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│                           🔄 Atualizado                                     │
+│                                                                            │
+│  ┌─────────┐                                                              │
+│  │         │  Teclado Mecânico Pro                                        │
+│  │  Image  │  Loja: KeyboardStore                                         │
+│  │         │  Preço real: R$ 299,99                                       │
+│  └─────────┘  Tags: #teclado #mecanico                                    │
+│                                                                            │
+│  [🔗 Link] [🏪 Ativar loja] [📤 Oferta] [🗑️ Excluir]                  │
+└────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    LOJAS CONFIAVEIS PAGE - NEW SORTING                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+BEFORE: Random order                    AFTER: Alphabetical order
+┌─────────────────────────┐          ┌─────────────────────────┐
+│ ⚡ TechStore           │          │ 🏪 AudioShop            │
+│ 📱 SmartStore          │    →     │ 🔌 EletroMania          │
+│ 🔌 EletroMania         │          │ 📱 SmartStore           │
+│ 🏪 AudioShop           │          │ ⚡ TechStore            │
+│ 💻 XYZ Informática     │          │ 💻 XYZ Informática      │
+└─────────────────────────┘          └─────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                  TELEGRAM MESSAGE - WITH IMAGE (NEW!)                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+BEFORE: Text only                    AFTER: Photo + Caption
+┌─────────────────────────┐          ┌─────────────────────────┐
+│ 🔥 OFERTA IMPERDÍVEL 🔥│          │ [Product Image Here]    │
+│                         │          │                         │
+│ Produto: Mouse Gamer   │    →     │ 🔥 OFERTA IMPERDÍVEL 🔥│
+│ Loja: TechStore        │          │                         │
+│ De: R$ 199,99          │          │ Produto: Mouse Gamer   │
+│ Preço: R$ 99,99        │          │ Loja: TechStore        │
+│ Desconto: 50%          │          │ De: R$ 199,99          │
+│                         │          │ Preço: R$ 99,99        │
+│ 🛒 Compre aqui         │          │ Desconto: 50%          │
+│                         │          │                         │
+│ #gamer #informatica    │          │ 🛒 Compre aqui         │
+└─────────────────────────┘          │                         │
+                                      │ #gamer #informatica    │
+                                      └─────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                   OFERTAS PUBLICADAS - SNAPSHOT DATA                          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+BEFORE: Shows current product data (may have changed)
+AFTER: Shows historical snapshot from publication time
+
+Example scenario:
+1. Product published on Jan 1st: R$ 99,99 → R$ 49,99 (50% off)
+2. Product price updated on Jan 15th: R$ 149,99 → R$ 89,99 (40% off)
+
+OLD VIEW (incorrect):                NEW VIEW (correct):
+┌─────────────────────────┐          ┌─────────────────────────┐
+│ Published Jan 1st       │          │ Published Jan 1st       │
+│ Price: R$ 89,99 ❌     │    →     │ Price: R$ 49,99 ✅     │
+│ Original: R$ 149,99 ❌ │          │ Original: R$ 99,99 ✅  │
+│ Discount: 40% ❌       │          │ Discount: 50% ✅       │
+└─────────────────────────┘          └─────────────────────────┘
+Shows current data                   Shows published data
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                              BADGE LEGEND                                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Position    Badge         Color    Meaning                    Duration
+──────────────────────────────────────────────────────────────────────────────
+Top-left    ⚠️ Na fila    Yellow   Awaiting approval         Until approved/rejected
+Top-center  ⭐ Novo       Blue     Created < 24h ago         24 hours
+Top-center  🔄 Atualizado Gray     Updated < 24h ago         24 hours
+Top-right   ✅ Postado    Green    Already published         Permanent
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         BUTTON BEHAVIOR CHANGES                               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+[🏪 Ativar loja]
+  • Before: Always enabled
+  • After: Disabled if store is already active
+  • Visual: Grayed out when disabled
+  • Prevents: Unnecessary API calls and confusion
+
+[📤 Oferta] (replaces [✓ Manter])
+  • Before: "Manter" just removed card from view
+  • After: "Oferta" sends product to approval queue
+  • Process: Confirm dialog → API call → Success message → Reload
+  • Result: Product appears in "Fila de Aprovação" page
+  • Badge: Product gets "Na fila" badge after reload
