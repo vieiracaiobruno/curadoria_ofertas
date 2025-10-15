@@ -157,6 +157,7 @@
 {% block scripts_extra %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {
+
   const ofertasContainer = document.getElementById("ofertas-container");
   const b1 = document.getElementById("layout-1");
   const b5 = document.getElementById("layout-5");
@@ -173,46 +174,42 @@ document.addEventListener("DOMContentLoaded", function () {
   b1.addEventListener("click", ()=>{ applyFilaMode("grid-1"); localStorage.setItem("fila.layout","grid-1"); });
   b5.addEventListener("click", ()=>{ applyFilaMode("grid-5"); localStorage.setItem("fila.layout","grid-5"); });
 
-  function keyFor(id){ return "ofertaTags:"+id; }
-  function normalizeTag(s){ return (s||"").trim().toLowerCase(); }
-
   function readTags(container){
-    return Array.from(container.querySelectorAll(".tag")).map(el=> normalizeTag(el.dataset.tagName)).filter(Boolean);
+    return Array.from(container.querySelectorAll(".tag"))
+      .map(el => (el.dataset.tagName || "").trim())
+      .filter(Boolean);
   }
+
   function renderTags(container, tags){
-    container.innerHTML="";
+    container.innerHTML = "";
     tags.forEach(t=>{
-      const span=document.createElement("span");
-      span.className="badge bg-primary p-2 me-1 tag";
-      span.dataset.tagName=t;
-      span.innerHTML=`#${t} <i class="bi bi-x-circle ms-1 remove-tag" title="Remover"></i>`;
+      const span = document.createElement("span");
+      span.className = "badge bg-primary p-2 me-1 tag";
+      span.dataset.tagName = t;
+      span.innerHTML = `#${t} <i class="bi bi-x-circle ms-1 remove-tag" title="Remover"></i>`;
       container.appendChild(span);
     });
   }
-  function saveTags(ofertaId,tags){ localStorage.setItem(keyFor(ofertaId), JSON.stringify(tags)); }
-  function loadTags(ofertaId){
-    try{ const raw=localStorage.getItem(keyFor(ofertaId)); return raw?JSON.parse(raw):null; }catch(e){ return null;}
-  }
 
   async function refreshCanais(card){
-    const container=card.querySelector(".tags-combined-container");
-    const tags=readTags(container);
-    const el=card.querySelector(".canais-destino-text");
-    el.innerHTML=`<i class="bi bi-telegram text-primary"></i> Carregando...`;
+    const container = card.querySelector(".tags-combined-container");
+    const tags = readTags(container);
+    const el = card.querySelector(".canais-destino-text");
+    el.innerHTML = `<i class="bi bi-telegram text-primary"></i> Carregando...`;
     try{
-      const r=await fetch(`/api/canais_destino?tags=${encodeURIComponent(tags.join(","))}`);
-      const data=await r.json();
+      const r = await fetch(`/api/canais_destino?tags=${encodeURIComponent(tags.join(","))}`);
+      const data = await r.json();
       if(data.status==="success"){
         if(data.canais.length){
-          el.innerHTML=`<i class="bi bi-telegram text-primary"></i> ${data.canais.map(c=>c.nome_amigavel).join(", ")}`;
-        }else{
-          el.innerHTML=`<i class="bi bi-telegram text-warning"></i> Nenhum canal encontrado.`;
+          el.innerHTML = `<i class="bi bi-telegram text-primary"></i> ${data.canais.map(c=>c.nome_amigavel).join(", ")}`;
+        } else {
+          el.innerHTML = `<i class="bi bi-telegram text-warning"></i> Nenhum canal encontrado.`;
         }
-      }else{
-        el.innerHTML=`<i class="bi bi-exclamation-triangle text-danger"></i> Erro ao carregar canais.`;
+      } else {
+        el.innerHTML = `<i class="bi bi-exclamation-triangle text-danger"></i> Erro ao carregar canais.`;
       }
     }catch(e){
-      el.innerHTML=`<i class="bi bi-exclamation-triangle text-danger"></i> Erro de rede.`;
+      el.innerHTML = `<i class="bi bi-exclamation-triangle text-danger"></i> Erro de rede.`;
     }
   }
 
@@ -220,56 +217,56 @@ document.addEventListener("DOMContentLoaded", function () {
     return readTags(container).length >= 1;
   }
 
+  // Inicialização: dedup preservando case original (prefilter + produto)
   document.querySelectorAll(".card-oferta").forEach(card=>{
-    const container=card.querySelector(".tags-combined-container");
-    const ofertaId=container.dataset.ofertaId;
-    const saved=loadTags(ofertaId);
-    if(Array.isArray(saved) && saved.length){
-      renderTags(container, Array.from(new Set(saved.map(normalizeTag))));
-    }else{
-      const uniq=Array.from(new Set(readTags(container)));
-      renderTags(container, uniq);
-      saveTags(ofertaId, uniq);
+    const container = card.querySelector(".tags-combined-container");
+    // Captura ordenada
+    const raw = Array.from(container.querySelectorAll(".tag")).map(t=>t.dataset.tagName || t.textContent.replace("#","").trim());
+    const seen = new Set();
+    const dedup = [];
+    for(const t of raw){
+      const key = t.toLowerCase();
+      if(seen.has(key)) continue;
+      seen.add(key);
+      dedup.push(t);
     }
+    renderTags(container, dedup);
     refreshCanais(card);
   });
 
+  // Remover tag
   document.addEventListener("click", e=>{
-    const btn=e.target.closest(".remove-tag");
+    const btn = e.target.closest(".remove-tag");
     if(!btn) return;
-    const container=btn.closest(".tags-combined-container");
-    const card=btn.closest(".card-oferta");
-    const ofertaId=container.dataset.ofertaId;
-    const tagEl=btn.closest(".tag");
+    const container = btn.closest(".tags-combined-container");
+    const card = btn.closest(".card-oferta");
+    const tagEl = btn.closest(".tag");
     tagEl.remove();
     if(!ensureAtLeastOne(container)){
       alert("Pelo menos 1 tag é obrigatória.");
       container.appendChild(tagEl);
       return;
     }
-    const tags=readTags(container);
-    saveTags(ofertaId,tags);
     refreshCanais(card);
   });
 
+  // Incluir tag (select)
   document.querySelectorAll(".card-oferta").forEach(card=>{
-    const container=card.querySelector(".tags-combined-container");
-    const ofertaId=container.dataset.ofertaId;
-    const sel=card.querySelector(".tag-select");
-    const btn=card.querySelector(".btn-incluir-tag");
-    btn.addEventListener("click",()=>{
-      const t=normalizeTag(sel.value);
-      if(!t) return;
-      const current=readTags(container);
-      if(current.includes(t)) return;
-      renderTags(container,[...current,t]);
-      saveTags(ofertaId,[...current,t]);
+    const container = card.querySelector(".tags-combined-container");
+    const sel = card.querySelector(".tag-select");
+    const btn = card.querySelector(".btn-incluir-tag");
+    btn.addEventListener("click", ()=>{
+      const tag = (sel.value || "").trim();
+      if(!tag) return;
+      const current = readTags(container);
+      if(current.map(t=>t.toLowerCase()).includes(tag.toLowerCase())) return;
+      renderTags(container, [...current, tag]);
       refreshCanais(card);
     });
   });
 
   async function acaoOferta(ofertaId, method, payload){
-    return fetch(`/api/ofertas/${ofertaId}/${method}`,{
+    return fetch(`/api/ofertas/${ofertaId}/${method}`, {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
       body: payload ? JSON.stringify(payload) : null
@@ -281,34 +278,33 @@ document.addEventListener("DOMContentLoaded", function () {
       document.querySelectorAll(".card-oferta").length;
   }
 
+  // Aprovar
   document.querySelectorAll(".btn-aprovar").forEach(b=>{
     b.addEventListener("click", async function(){
-      const card=this.closest(".card-oferta");
-      const container=card.querySelector(".tags-combined-container");
-      const ofertaId=container.dataset.ofertaId;
-      const tags=readTags(container);
+      const card = this.closest(".card-oferta");
+      const ofertaId = card.querySelector(".tags-combined-container").dataset.ofertaId;
+      const tags = readTags(card.querySelector(".tags-combined-container"));
       if(!confirm("Aprovar e postar esta oferta?")) return;
-      const data=await acaoOferta(ofertaId,"aprovar",{tags});
+      const data = await acaoOferta(ofertaId,"aprovar",{tags});
       if(data.status==="success"){
-        localStorage.removeItem(keyFor(ofertaId));
         card.remove(); atualizarContador();
-      }else alert("Erro: "+data.message);
+      } else alert("Erro: "+data.message);
     });
   });
 
+  // Rejeitar
   document.querySelectorAll(".btn-rejeitar").forEach(b=>{
     b.addEventListener("click", async function(){
       const card=this.closest(".card-oferta");
       const ofertaId=card.querySelector(".tags-combined-container").dataset.ofertaId;
       if(!confirm("Rejeitar esta oferta?")) return;
       const data=await acaoOferta(ofertaId,"rejeitar");
-      if(data.status==="success"){
-        localStorage.removeItem(keyFor(ofertaId));
-        card.remove(); atualizarContador();
-      } else alert("Erro: "+data.message);
+      if(data.status==="success"){ card.remove(); atualizarContador(); }
+      else alert("Erro: "+data.message);
     });
   });
 
+  // Agendar
   document.querySelectorAll(".btn-agendar").forEach(b=>{
     b.addEventListener("click", async function(){
       const card=this.closest(".card-oferta");
@@ -316,10 +312,8 @@ document.addEventListener("DOMContentLoaded", function () {
       const dt=prompt("Data/hora (YYYY-MM-DDTHH:MM:SS)");
       if(!dt) return;
       const data=await acaoOferta(ofertaId,"agendar",{data_agendamento:dt});
-      if(data.status==="success"){
-        localStorage.removeItem(keyFor(ofertaId));
-        card.remove(); atualizarContador();
-      } else alert("Erro: "+data.message);
+      if(data.status==="success"){ card.remove(); atualizarContador(); }
+      else alert("Erro: "+data.message);
     });
   });
 

@@ -134,12 +134,22 @@ def dashboard():
                            todas_tags=todas_tags)
 
 @app.route("/publicadas")
+@app.route("/ofertas/publicadas")
 @login_required
-def publicadas():
+def ofertas_publicadas():
     with SessionLocal() as db:
-        ofertas_publicadas = db.query(Oferta).filter(Oferta.status == "PUBLICADO").all()
-        tags = db.query(Tag).all()
-    return render_template("ofertas_publicadas.html", ofertas=ofertas_publicadas, tags=tags)
+        ofertas = (
+            db.query(Oferta)
+              .options(
+                  joinedload(Oferta.produto).options(selectinload(Produto.tags)),
+                  joinedload(Oferta.loja),
+                  selectinload(Oferta.metricas)
+              )
+              .filter(Oferta.status == "PUBLICADO")
+              .order_by(Oferta.data_publicacao.desc())
+              .all()
+        )
+    return render_template("ofertas_publicadas.html", ofertas=ofertas)
 
 @app.route("/configuracoes")
 @login_required
