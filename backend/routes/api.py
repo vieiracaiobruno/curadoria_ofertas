@@ -8,6 +8,7 @@ from datetime import datetime
 from ..db.database import DATABASE_URL, Base, SessionLocal
 from ..models.models import Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, MetricaOferta, OfertaPublicada, HistoricoPreco, ConfigVar, LogColeta
 from backend.modules.utils.config import get_config, set_config, list_configs
+from backend.modules.publisher import Publisher
 
 api_bp = Blueprint("api", __name__)
 
@@ -116,6 +117,7 @@ def api_aprovar_oferta(oferta_id):
         return jsonify({"status": "error", "message": "Oferta não encontrada."}), 404
 
     try:
+        print(f"Aprovando oferta {oferta_id}...")
         # Atualiza as tags do produto se forem enviadas
         tags_from_frontend = request.json.get("tags", [])
         produto = db.get(Produto, oferta.produto_id)
@@ -125,7 +127,14 @@ def api_aprovar_oferta(oferta_id):
 
         oferta.status = "APROVADO"
         db.commit()
-        return jsonify({"status": "success", "message": "Oferta aprovada com sucesso!"}), 200
+        print(f"Oferta {oferta_id} aprovada.")
+
+        # NOVO: Publicar imediatamente após aprovar
+        publisher = Publisher(db)
+        publisher._publicar_oferta(oferta)  # Função que publica só esta oferta
+
+        db.commit()
+        return jsonify({"status": "success", "message": "Oferta aprovada e publicada com sucesso!"}), 200
     except Exception as e:
         db.rollback()
         return jsonify({"status": "error", "message": str(e)}), 500

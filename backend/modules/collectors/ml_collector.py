@@ -10,6 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 from bs4 import BeautifulSoup
 import requests
+import html as _html
+from urllib.parse import urlparse, parse_qs, unquote
 # Selenium (para clicar no botão Compartilhar)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -124,13 +126,24 @@ class MLCollector(BaseCollector):
                 'cache-control': 'max-age=0',
                 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
             }
-            self._cookies = {
-                '_d2id': '9b442ab8-dd44-4047-822f-6607b138f00f-n',
-                '_mldataSessionId': '0524ed0c-e29c-46c2-b455-0cc59f53342a',
-                '_csrf': 'D_7jfp4B21j-xj5KRDhjegGn',
-                'c_ui-navigation': '6.6.152',
-                'c_vpp': '1.162.0'
-            }
+            # Atualizar cookies antes de fazer a chamada
+            print(f"Atualizando cookies para API de afiliados...")
+            all_cookies = update_all_site_cookies(self._base_user_data_dir, self._base_profile_dir)
+            ml_cookies = all_cookies.get("https://www.mercadolivre.com.br", {}).get("cookies", [])
+        
+            # Converter cookies para formato de string
+            self._cookies = "; ".join([f"{c['name']}={c['value']}" for c in ml_cookies if 'name' in c and 'value' in c])
+            #print("Cookies atualizados: ", self._cookies)
+
+            # Parse cookies para dict (requests exige dict se usado no argumento cookies)
+            self._cookies_dict = {}
+            if self._cookies:
+                for part in self._cookies.split(";"):
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        self._cookies_dict[k.strip()] = v.strip()
+            # Opcional: manter header pronto
+            self._cookie_header = self._cookies
 
     def _init_selenium(self, selenium_client, user_data_dir, profile_dir, detach):
         """
@@ -227,28 +240,43 @@ class MLCollector(BaseCollector):
         # Limpar URLs antes de enviar
         clean_urls = [self._clean_url(url) for url in urls]
         
-        # Atualizar cookies antes de fazer a chamada
-        print(f"Atualizando cookies para API de afiliados...")
-        all_cookies = update_all_site_cookies(self._base_user_data_dir, self._base_profile_dir)
-        ml_cookies = all_cookies.get("https://www.mercadolivre.com.br", {}).get("cookies", [])
-        
-        # Converter cookies para formato de string
-        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in ml_cookies if 'name' in c and 'value' in c])
-        
         api_url = "https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink"
+        # Corrigir: montar header Cookie a partir do dict de cookies, se disponível
+        cookie_header = ""
+        if hasattr(self, "_cookies_dict") and self._cookies_dict:
+            cookie_header = "; ".join([f"{k}={v}" for k, v in self._cookies_dict.items()])
+        elif hasattr(self, "_cookies") and self._cookies:
+            cookie_header = self._cookies
+
         headers = {
             'accept': 'application/json, text/plain, */*',
             'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
             'content-type': 'application/json',
             'origin': 'https://www.mercadolivre.com.br',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-            'Cookie': cookie_str
         }
+        if cookie_header:
+            headers['Cookie'] = cookie_header
         
         body = {
             "urls": clean_urls,
             "tag": tag
         }
+
+        # Gerar comando CURL equivalente para debug
+        curl_command = (
+            f"curl -X POST '{api_url}' "
+            f"-H 'accept: {headers['accept']}' "
+            f"-H 'accept-language: {headers['accept-language']}' "
+            f"-H 'content-type: {headers['content-type']}' "
+            f"-H 'origin: {headers['origin']}' "
+            f"-H 'user-agent: {headers['user-agent']}' "
+            f"-H 'Cookie: {headers.get('Cookie','')}' "
+            f"-d '{json.dumps(body, ensure_ascii=False)}'"
+        )
+        #print("\n[DEBUG] Comando CURL equivalente:")
+        #print(curl_command)
+        #print("-" * 100)
         
         print(f"Chamando API de afiliados para {len(clean_urls)} URLs...")
         try:
@@ -279,7 +307,17 @@ class MLCollector(BaseCollector):
         
         print(f"Enriquecendo via HTTP: {url}")
         try:
-            response = requests.get(url, headers=self._http_headers, cookies=self._cookies, timeout=15)
+            # Usa dict de cookies (requests exige dict ou CookieJar)
+            cookies_dict = getattr(self, "_cookies_dict", None)
+            headers = dict(self._http_headers)
+            if getattr(self, "_cookie_header", None):
+                headers["Cookie"] = self._cookie_header
+            response = requests.get(
+                url,
+                headers=headers,
+                cookies=cookies_dict if isinstance(cookies_dict, dict) else None,
+                timeout=15
+            )
             response.raise_for_status()
             html = response.text
             time.sleep(random.uniform(0.5, 1.5))
@@ -348,6 +386,7 @@ class MLCollector(BaseCollector):
         Paraleliza o enriquecimento em N workers.
         No modo HTTP: usa requisições diretas sem Selenium.
         No modo Selenium: cada worker usa seu próprio driver efêmero com cookies do perfil logado.
+        Limitação: a API de afiliados aceita no máximo 30 URLs por chamada -> enviar em lotes de 30.
         """
         if not self.use_selenium:
             # Modo HTTP: enriquecimento sequencial (pode ser paralelizado no futuro se necessário)
@@ -359,22 +398,33 @@ class MLCollector(BaseCollector):
                     print(f"Erro ao enriquecer item via HTTP: {e}")
                     out.append(it)
             
-            # Após enriquecer todos os itens, buscar links de afiliado em lote
-            print(f"\n=== Buscando links de afiliado em lote para {len(out)} itens ===")
+            # Após enriquecer todos os itens, buscar links de afiliado em lotes de 30
+            print(f"\n=== Buscando links de afiliado em lote para {len(out)} itens (máx 30 por requisição) ===")
             urls_to_fetch = [item["url_base"] for item in out if item.get("url_base")]
-            if urls_to_fetch:
-                affiliate_mapping = self._get_affiliate_links_batch(urls_to_fetch)
-                # Atualizar os itens com os links de afiliado
-                for item in out:
-                    url_base = item.get("url_base")
-                    if url_base and url_base in affiliate_mapping:
-                        item["url_afiliado_curta"] = affiliate_mapping[url_base]
+            affiliate_mapping: Dict[str, str] = {}
+            batch_size = 30
+            for start in range(0, len(urls_to_fetch), batch_size):
+                chunk = urls_to_fetch[start:start + batch_size]
+                print(f"  -> Lote {start // batch_size + 1}: {len(chunk)} URLs")
+                try:
+                    mapping_chunk = self._get_affiliate_links_batch(chunk)
+                    affiliate_mapping.update(mapping_chunk)
+                except Exception as e:
+                    print(f"    ✗ Erro no lote: {e}")
+                time.sleep(0.5)  # pequeno intervalo para evitar throttling
             
+            # Atualizar os itens com os links de afiliado obtidos
+            total_links = 0
+            for item in out:
+                url_base = item.get("url_base")
+                if url_base and url_base in affiliate_mapping:
+                    item["url_afiliado_curta"] = affiliate_mapping[url_base]
+                    total_links += 1
+            print(f"=== Finalizado: {total_links} links de afiliado atribuídos ===\n")
             return out
         
         # Modo Selenium (existente)
         if self.max_enrich_workers <= 1 or len(offers) <= 1:
-            # Sequencial usando o perfil logado diretamente
             out = []
             for it in offers:
                 out.append(self._enrich_with_client(self.selenium_profile, it))
@@ -390,13 +440,13 @@ class MLCollector(BaseCollector):
                 for idx, chunk in enumerate(chunks):
                     client = clients[idx]
                     def run_chunk(items: List[dict], cli: SeleniumClient):
-                        out = []
+                        out_local = []
                         for it in items:
                             try:
-                                out.append(self._enrich_with_client(cli, it))
+                                out_local.append(self._enrich_with_client(cli, it))
                             except Exception:
-                                out.append(it)
-                        return out
+                                out_local.append(it)
+                        return out_local
                     print(f"Iniciando worker {idx+1}/{len(chunks)} com {len(chunk)} itens...")
                     futures.append(ex.submit(run_chunk, chunk, client))
                 for fut in as_completed(futures):
@@ -465,13 +515,13 @@ class MLCollector(BaseCollector):
                 node = node.get("track", {})
                 node = node.get("melidata_event", {})
                 node = node.get("event_data", {})
-                id = node.get("seller_id") or node.get("seller-id")
+                id = node.get("official_store_id") or node.get("official-store-id")
                 if isinstance(id, int):
                     return str(id)
-                if isinstance(id, str):
-                    sid = id.strip()
-                    if sid.isdigit():
-                        return sid
+                else:
+                    id = node.get("seller_id") or node.get("seller-id")
+                    if isinstance(id, int):
+                        return str(id)
                 return None
         except Exception:
             return None
@@ -733,8 +783,24 @@ class MLCollector(BaseCollector):
         """Busca página de ofertas via HTTP direto (sem Selenium)"""
         url = f"https://www.mercadolivre.com.br/ofertas?page={page_num}"
         print(f"Buscando página de ofertas {page_num} via HTTP: {url}")
+
+        # Montar headers (adiciona Cookie aqui)
+        headers = dict(self._http_headers or {})
+        if getattr(self, "_cookie_header", None):
+            headers["Cookie"] = self._cookie_header
+
+        # Montar headers em string legível para curl
+        headers_str = " ".join([f"-H '{k}: {v}'" for k, v in headers.items()])
+
+        #curl_command = f"curl -X GET '{url}' {headers_str}"
+        #print("\n[DEBUG] Comando CURL equivalente:")
+        #print(curl_command)
+        #print("-" * 100)
+
         try:
-            response = requests.get(url, headers=self._http_headers, cookies=self._cookies, timeout=15)
+            # Removido: cookies=self._cookies (string) -> causava "string indices must be integers"
+            # Use somente headers com 'Cookie' ou cookies=dict
+            response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
             time.sleep(random.uniform(0.5, 1.5))
             return response.text
@@ -763,13 +829,43 @@ class MLCollector(BaseCollector):
         site = BeautifulSoup(html, "html.parser")
         links = site.find_all("a", class_="poly-component__title")
         print(f"  Itens encontrados na página: {len(links)}")
+        
+        def _resolve_click1(href: str) -> str:
+            """
+            Se o href for um link de redirecionamento (click1.mercadolivre...),
+            extrai o parâmetro 'url', decodifica percent-encoding e entidades HTML.
+            """
+            if not href:
+                return href
+            # Normaliza entidades HTML primeiro (alguns &amp; podem quebrar parsing de query)
+            href_clean = _html.unescape(href)
+            try:
+                parsed = urlparse(href_clean)
+                if "click1.mercadolivre.com.br" not in parsed.netloc:
+                    return href  # não é link de redirecionamento
+                qs = parse_qs(parsed.query)
+                target = qs.get("url", [None])[0]
+                if not target:
+                    return href
+                # Decodifica múltiplas vezes se necessário
+                prev = target
+                for _ in range(3):
+                    cur = unquote(prev)
+                    if cur == prev:
+                        break
+                    prev = cur
+                target_decoded = _html.unescape(prev)
+                return target_decoded
+            except Exception:
+                return href
+
         results: List[dict] = []
         for link in links:
             href = link.get("href", "") or ""
-
+            final_url = _resolve_click1(href)
             results.append({
                 "source": "mercadolivre",
-                "url_base": href,
+                "url_base": final_url,
             })
         return results
 

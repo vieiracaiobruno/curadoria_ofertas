@@ -2,136 +2,98 @@
 
 {% block title %}Ofertas Publicadas{% endblock %}
 
-{% block head_extra %}
-<style>
-    .product-image-thumb {
-        width: 50px;
-        height: 50px;
-        object-fit: contain;
-    }
-    .price-small {
-        font-size: 0.75rem;
-        line-height: 1.05rem;
-        display: block;
-    }
-    .price-off {
-        color: #d32f2f;
-        font-weight: 600;
-    }
-</style>
-{% endblock %}
-
 {% block content %}
 <h1 class="mb-4">Ofertas Publicadas</h1>
 
-<div class="row mb-4">
-    <div class="col-md-4">
-        <label for="dateRange" class="form-label">Período:</label>
-        <input type="text" id="dateRange" class="form-control" placeholder="01/01/2024 - 31/01/2024">
-    </div>
-    <div class="col-md-4">
-        <label for="categoryFilter" class="form-label">Categoria:</label>
-        <select id="categoryFilter" class="form-select">
-            <option value="">Todas</option>
-            {% for tag in tags %}
-            <option value="{{ tag.nome_tag }}">#{{ tag.nome_tag }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="col-md-4">
-        <label for="searchProduct" class="form-label">Pesquisar:</label>
-        <input type="text" id="searchProduct" class="form-control" placeholder="Nome do produto...">
-    </div>
-</div>
-
-<div class="table-responsive">
-    <table class="table table-striped table-hover align-middle">
-        <thead>
-            <tr>
-                <th>Imagem</th>
-                <th>Nome do Produto</th>
-                <th>Preços</th>
-                <th>Data Publicação</th>
-                <th>Cliques</th>
-                <th>Vendas</th>
-                <th>Conversão (%)</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% if not ofertas %}
-            <tr>
-                <td colspan="7" class="text-center">Nenhuma oferta publicada ainda.</td>
-            </tr>
+{% if not ofertas %}
+  <div class="alert alert-info">Nenhuma oferta publicada.</div>
+{% else %}
+  <div class="table-responsive card mb-4">
+    <table class="table table-sm table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Imagem</th>
+          <th>Produto</th>
+          <th>Loja</th>
+          <th>Preço Oferta</th>
+          <th>Preço Original</th>
+          <th>Desconto</th>
+          <th>Tags</th>
+          <th>Canais Publicados</th>
+          <th>Data Publicação</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for oferta in ofertas %}
+        {% set p = oferta.produto %}
+        <tr>
+          <td style="width:80px;">
+            {% if p and p.imagem_url %}
+              <img src="{{ p.imagem_url }}" alt="img" style="max-width:70px;max-height:70px;">
+            {% else %}
+              <span class="text-muted small">—</span>
             {% endif %}
-            {% for oferta in ofertas %}
-            {% set prod = oferta.produto %}
-            <tr>
-                <td>
-                    <img src="{{ prod.imagem_url or url_for('static', filename='placeholder.png') }}"
-                         alt="{{ prod.nome_produto }}" class="product-image-thumb">
-                </td>
-                <td style="max-width:320px;">
-                    <div class="fw-semibold">{{ prod.nome_produto }}</div>
-                    <div class="text-muted small">
-                        ID: {{ prod.id_product or '—' }} |
-                        Seller: {{ prod.product_id_loja or '—' }}
-                    </div>
-                </td>
-                <td>
-                    {% if prod.preco_oferta is not none %}
-                        <span class="price-off">
-                            R$ {{ "%.2f"|format(prod.preco_oferta) }}
-                        </span>
-                    {% else %}
-                        <span class="price-off">—</span>
-                    {% endif %}
-                    {% if prod.preco_original %}
-                        <span class="text-muted text-decoration-line-through price-small">
-                            R$ {{ "%.2f"|format(prod.preco_original) }}
-                        </span>
-                    {% endif %}
-                    {% if prod.desconto_real %}
-                        <span class="badge bg-success">
-                            -{{ "%.1f"|format(prod.desconto_real) }}%
-                        </span>
-                    {% endif %}
-                </td>
-                <td>
-                    {{ oferta.data_publicacao.strftime("%d/%m/%Y %H:%M") if oferta.data_publicacao else "N/A" }}
-                    {% if prod.data_encontrado %}
-                        <div class="text-muted price-small">
-                            Encontrado: {{ prod.data_encontrado.strftime("%d/%m %H:%M") }}
-                        </div>
-                    {% endif %}
-                </td>
-                <td>{{ oferta.metricas[0].cliques if oferta.metricas else 0 }}</td>
-                <td>{{ oferta.metricas[0].vendas if oferta.metricas else 0 }}</td>
-                <td>
-                    {% if oferta.metricas and oferta.metricas[0].cliques > 0 %}
-                        {{ "%.2f"|format((oferta.metricas[0].vendas / oferta.metricas[0].cliques) * 100) }}%
-                    {% else %}
-                        0.00%
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
+          </td>
+          <td>
+            {{ p.nome_produto if p else '—' }}
+          </td>
+          <td>
+            {{ oferta.loja.nome_loja if oferta.loja else '—' }}
+          </td>
+          <td>
+            {% if p and p.preco_oferta is not none %}
+              R$ {{ '%.2f'|format(p.preco_oferta) }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            {% if p and p.preco_original %}
+              R$ {{ '%.2f'|format(p.preco_original) }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            {% if p and p.desconto_real %}
+              {{ '%.0f'|format(p.desconto_real) }}%
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td>
+            {% if p and p.tags %}
+              {% for tag in p.tags %}
+                <span class="badge bg-primary me-1">#{{ tag.nome_tag }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if canais_por_oferta and canais_por_oferta.get(oferta.id) %}
+              {{ canais_por_oferta.get(oferta.id)|join(', ') }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {{ oferta.data_publicacao.strftime('%d/%m/%Y %H:%M') if oferta.data_publicacao else '—' }}
+          </td>
+          <td>
+            {% if p and p.url_base %}
+              <a href="{{ p.url_base }}" target="_blank" class="btn btn-sm btn-outline-primary">Ver</a>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
     </table>
-</div>
-
-<nav aria-label="Page navigation example">
-    <ul class="pagination justify-content-center">
-        <li class="page-item disabled"><a class="page-link" href="#">Anterior</a></li>
-        <li class="page-item active"><a class="page-link" href="#">1</a></li>
-        <li class="page-item"><a class="page-link" href="#">2</a></li>
-        <li class="page-item"><a class="page-link" href="#">3</a></li>
-        <li class="page-item"><a class="page-link" href="#">Próximo</a></li>
-    </ul>
-</nav>
-{% endblock %}
-
-{% block scripts_extra %}
-<!-- futura lógica de filtros -->
+  </div>
+{% endif %}
 {% endblock %}
 
 
