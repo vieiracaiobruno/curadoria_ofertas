@@ -91,7 +91,30 @@
   {% endif %}
 
   {% for produto in produtos %}
-  <div class="card card-produto mb-4" id="produto-{{ produto.id }}">
+  <div class="card card-produto mb-4" id="produto-{{ produto.id }}" style="position: relative;">
+    <!-- Marcações no topo do card -->
+    {% if produto._foi_postado %}
+    <span class="badge bg-success" style="position: absolute; top: 10px; right: 10px; z-index: 10;" title="Produto já foi postado">
+      <i class="bi bi-check-circle"></i> Postado
+    </span>
+    {% endif %}
+    
+    {% if produto._na_fila %}
+    <span class="badge bg-warning text-dark" style="position: absolute; top: 10px; left: 10px; z-index: 10;" title="Aguardando aprovação">
+      <i class="bi bi-clock"></i> Na fila
+    </span>
+    {% endif %}
+    
+    {% if produto._e_novo %}
+    <span class="badge bg-info" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10;" title="Produto novo (últimas 24h)">
+      <i class="bi bi-star"></i> Novo
+    </span>
+    {% elif produto._foi_atualizado %}
+    <span class="badge bg-secondary" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10;" title="Produto atualizado (últimas 24h)">
+      <i class="bi bi-arrow-repeat"></i> Atualizado
+    </span>
+    {% endif %}
+    
     <div class="row g-0">
       <div class="col-md-2 d-flex align-items-center justify-content-center p-3">
         <img src="{{ produto.imagem_url or url_for('static', filename='placeholder.png') }}"
@@ -178,12 +201,13 @@
               <i class="bi bi-box-arrow-up-right"></i> Link
             </a>
 
-            <button class="btn btn-outline-primary btn-ativar-loja" data-produto-id="{{ produto.id }}">
+            <button class="btn btn-outline-primary btn-ativar-loja" data-produto-id="{{ produto.id }}" 
+                    {% if produto._loja_ativa %}disabled{% endif %}>
               <i class="bi bi-shop"></i> Ativar loja
             </button>
 
-            <button class="btn btn-outline-secondary btn-manter" data-produto-id="{{ produto.id }}">
-              <i class="bi bi-check-circle"></i> Manter
+            <button class="btn btn-outline-info btn-oferta" data-produto-id="{{ produto.id }}">
+              <i class="bi bi-send"></i> Oferta
             </button>
 
             <button class="btn btn-danger btn-excluir" data-produto-id="{{ produto.id }}">
@@ -237,11 +261,24 @@
       document.getElementById("contador-produtos").textContent = n;
     }
 
-    document.querySelectorAll(".btn-manter").forEach(btn => {
-      btn.addEventListener("click", function () {
+    document.querySelectorAll(".btn-oferta").forEach(btn => {
+      btn.addEventListener("click", async function () {
         const id = this.dataset.produtoId;
-        const card = document.getElementById("produto-" + id);
-        if (card) { card.remove(); updateCounter(); }
+        if (!confirm("Enviar este produto para a fila de aprovação?")) return;
+        
+        try {
+          const resp = await fetch(`/api/produtos/${id}/criar_oferta`, { method: "POST" });
+          const data = await resp.json();
+          if (data.status === "success") {
+            alert("Produto enviado para a fila de aprovação!");
+            // Reload page to update markers
+            location.reload();
+          } else {
+            alert("Erro ao criar oferta: " + (data.message || "desconhecido"));
+          }
+        } catch (e) {
+          alert("Falha na requisição: " + e);
+        }
       });
     });
 

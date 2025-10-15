@@ -4,7 +4,7 @@ import json
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from backend.models.models import Oferta, CanalTelegram, Produto, LojaConfiavel, MetricaOferta
+from backend.models.models import Oferta, CanalTelegram, Produto, LojaConfiavel, MetricaOferta, OfertaPublicada
 from backend.modules.utils.config import get_config
 
 class Publisher:
@@ -79,6 +79,34 @@ class Publisher:
             print(f"Erro ao enviar mensagem para o Telegram ({chat_id}): {e}")
             return False
 
+    def _send_telegram_photo(self, chat_id, photo_url, caption):
+        """Envia uma foto com legenda para o Telegram."""
+        if not self.telegram_bot_token or self.telegram_bot_token == "SEU_TELEGRAM_BOT_TOKEN":
+            print("Telegram Bot Token não configurado. Mensagem não enviada.")
+            return False
+
+        url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendPhoto"
+        payload = {
+            "chat_id": chat_id,
+            "photo": photo_url,
+            "caption": caption,
+            "parse_mode": "MarkdownV2"
+        }
+
+        try:
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code != 200:
+                try:
+                    err = response.json()
+                except Exception:
+                    err = response.text
+                print(f"Telegram retornou erro {response.status_code}: {err}")
+                return False
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"Erro ao enviar foto para o Telegram ({chat_id}): {e}")
+            return False
+
     def _publicar_oferta(self, oferta):
         produto = oferta.produto
         loja = oferta.loja
@@ -148,9 +176,36 @@ class Publisher:
                 if chat_id in canais_publicados:
                     continue
                 print(f"Publicando oferta {oferta.id} no canal {canal.nome_amigavel} ({chat_id})...")
-                if self._send_telegram_message(chat_id, message):
+                
+                # Tenta enviar com imagem, se disponível
+                sucesso = False
+                if produto.imagem_url:
+                    sucesso = self._send_telegram_photo(chat_id, produto.imagem_url, message)
+                    if not sucesso:
+                        print(f"Falha ao enviar foto, tentando mensagem de texto...")
+                        sucesso = self._send_telegram_message(chat_id, message)
+                else:
+                    sucesso = self._send_telegram_message(chat_id, message)
+                
+                if sucesso:
                     canais_publicados.add(chat_id)
                     print(f"Publicado no canal {canal.nome_amigavel}.")
+                    
+                    # Salva registro de OfertaPublicada com snapshot dos dados
+                    oferta_publicada = OfertaPublicada(
+                        oferta_id=oferta.id,
+                        canal_id=canal.id,
+                        data_publicacao=datetime.now(),
+                        nome_produto=produto.nome_produto,
+                        preco_original=produto.preco_original,
+                        preco_oferta=produto.preco_oferta,
+                        desconto_real=produto.desconto_real,
+                        url_afiliado_curta=short_url or long_url,
+                        imagem_url=produto.imagem_url,
+                        nome_loja=loja.nome_loja,
+                        canal_nome=canal.nome_amigavel
+                    )
+                    self.db_session.add(oferta_publicada)
                 else:
                     print(f"Falha ao publicar no canal {canal.nome_amigavel}.")
 

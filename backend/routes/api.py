@@ -490,6 +490,45 @@ def api_list_tags():
     finally:
         db.close()
 
+@api_bp.route("/produtos/<int:produto_id>/criar_oferta", methods=["POST"])
+def api_criar_oferta_produto(produto_id):
+    """Cria uma oferta para o produto e envia para fila de aprovação."""
+    db = SessionLocal()
+    try:
+        produto = db.get(Produto, produto_id)
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+        
+        # Busca loja associada
+        loja = db.query(LojaConfiavel).filter(LojaConfiavel.id_loja_api == produto.product_id_loja).first()
+        if not loja:
+            return jsonify({"status": "error", "message": "Loja não encontrada para este produto."}), 404
+        
+        # Verifica se já existe uma oferta pendente para este produto
+        oferta_existente = db.query(Oferta).filter(
+            Oferta.produto_id == produto_id,
+            Oferta.status == "PENDENTE_APROVACAO"
+        ).first()
+        
+        if oferta_existente:
+            return jsonify({"status": "error", "message": "Já existe uma oferta pendente para este produto."}), 400
+        
+        # Cria nova oferta
+        nova_oferta = Oferta(
+            produto_id=produto_id,
+            loja_id=loja.id,
+            status="PENDENTE_APROVACAO"
+        )
+        db.add(nova_oferta)
+        db.commit()
+        
+        return jsonify({"status": "success", "message": "Oferta criada e enviada para aprovação!"}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
+
 @api_bp.route("/produtos/<int:produto_id>/tags", methods=["POST"])
 def api_add_tags_to_product(produto_id):
     """

@@ -97,7 +97,7 @@ def _compile_pat(token: str):
 @login_required
 def lojas_confiaveis():
     with SessionLocal() as db:
-        lojas = db.query(LojaConfiavel).all()
+        lojas = db.query(LojaConfiavel).order_by(LojaConfiavel.nome_loja).all()
     return render_template("lojas_confiaveis.html", lojas=lojas)
 
 @app.route("/")
@@ -189,6 +189,7 @@ def setup_admin():
 @app.route("/produtos")
 @login_required
 def lista_produtos():
+    from datetime import timedelta
     with SessionLocal() as db:
         produtos = (
             db.query(Produto)
@@ -223,6 +224,32 @@ def lista_produtos():
         for p in produtos:
             p._nome_loja = by_seller.get(getattr(p, "product_id_loja", None)) \
                            or by_alt.get(getattr(p, "product_id_loja_alt", None))
+            
+            # Requirement 6: Marca se produto já foi postado
+            p._foi_postado = any(oferta.status == "PUBLICADO" for oferta in p.ofertas)
+            
+            # Requirement 7: Marca se produto está na fila de aprovação
+            p._na_fila = any(oferta.status == "PENDENTE_APROVACAO" for oferta in p.ofertas)
+            
+            # Requirement 8: Marca se produto é novo ou foi atualizado recentemente (1 dia)
+            agora = datetime.now()
+            p._e_novo = False
+            p._foi_atualizado = False
+            if getattr(p, "data_criacao", None):
+                diferenca_criacao = agora - p.data_criacao
+                if diferenca_criacao <= timedelta(days=1):
+                    p._e_novo = True
+            if getattr(p, "data_atualizacao", None):
+                diferenca_atualizacao = agora - p.data_atualizacao
+                # Só marca como atualizado se não for novo
+                if diferenca_atualizacao <= timedelta(days=1) and not p._e_novo:
+                    p._foi_atualizado = True
+            
+            # Requirement 4: Verifica se loja está ativa
+            loja = None
+            if p.product_id_loja:
+                loja = db.query(LojaConfiavel).filter(LojaConfiavel.id_loja_api == p.product_id_loja).first()
+            p._loja_ativa = loja.ativa if loja else False
 
     return render_template("produtos.html", produtos=produtos)
 
