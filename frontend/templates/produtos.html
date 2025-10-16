@@ -9,6 +9,75 @@
   .product-image { max-width:100%; height:auto; max-height:150px; object-fit:contain; }
   .tag { cursor: default; }
 
+  /* ====== Card Flip Animation ====== */
+  .card-flip-container {
+    perspective: 1000px;
+    position: relative;
+  }
+  
+  .card-flip-inner {
+    position: relative;
+    width: 100%;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+  }
+  
+  .card-flip-container.flipped .card-flip-inner {
+    transform: rotateY(180deg);
+  }
+  
+  .card-flip-front, .card-flip-back {
+    width: 100%;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  
+  .card-flip-back {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: rotateY(180deg);
+    background: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 .125rem .25rem rgba(0,0,0,.075);
+  }
+  
+  .ofertas-historico {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+    align-items: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.5rem;
+    max-height: 120px; /* mantém limite vertical */
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    font-size: 0.78rem; /* fonte menor */
+  }
+  
+  .oferta-item {
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-width: 180px; /* largura mínima de cada bloco de oferta */
+    max-width: 220px;
+    padding: 0.45rem;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.02);
+    box-shadow: none;
+    margin: 0;
+    white-space: normal;
+    font-size: 0.78rem; /* mesma fonte reduzida */
+  }
+
+  .oferta-item .mb-2 { margin-bottom: .35rem; }
+  .oferta-item .text-muted { font-size: 0.72rem; }
+
+  /* adaptar para modo compacto (5 por linha) */
+  #produtos-container.grid-5 .ofertas-historico { max-height: 100px; font-size: 0.75rem; }
+  #produtos-container.grid-5 .oferta-item { min-width: 150px; max-width: 180px; font-size: 0.75rem; }
+
   /* ====== Layouts ====== */
   #produtos-container.grid-1 { display:block; }
   #produtos-container.grid-5 {
@@ -99,19 +168,23 @@
   {% endif %}
 
   {% for produto in produtos %}
-  <div class="card card-produto mb-4"
+  <div class="card card-produto mb-4 card-flip-container {% if produto._foi_postado %}clickable{% endif %}"
        id="produto-{{ produto.id }}"
        style="position: relative;"
        data-novo="{{ '1' if produto._e_novo else '0' }}"
        data-atualizado="{{ '1' if produto._foi_atualizado else '0' }}"
        data-postado="{{ '1' if produto._foi_postado else '0' }}"
        data-na-fila="{{ '1' if produto._na_fila else '0' }}">
-    <!-- Marcações no topo do card -->
-    {% if produto._foi_postado %}
-    <span class="badge bg-success" style="position: absolute; top: 10px; right: 10px; z-index: 10;" title="Produto já foi postado">
-      <i class="bi bi-check-circle"></i> Postado
-    </span>
-    {% endif %}
+    
+    <div class="card-flip-inner">
+      <!-- FRONT SIDE -->
+      <div class="card-flip-front">
+        <!-- Marcações no topo do card -->
+        {% if produto._foi_postado %}
+        <span class="badge bg-success" style="position: absolute; top: 10px; right: 10px; z-index: 10;" title="Produto já foi postado">
+          <i class="bi bi-check-circle"></i> Postado
+        </span>
+        {% endif %}
     
     {% if produto._na_fila %}
     <span class="badge bg-warning text-dark badge-na-fila" style="position: absolute; top: 10px; left: 10px; z-index: 10;" title="Aguardando aprovação">
@@ -236,7 +309,28 @@
         </div>
       </div>
     </div>
-  </div>
+      </div><!-- end card-flip-front -->
+      
+      <!-- BACK SIDE -->
+      <div class="card-flip-back">
+        
+        <div class="card-body">
+          <h5 class="card-title mb-3">
+            <i class="bi bi-clock-history"></i> Ofertas
+          </h5>
+          
+          <div class="ofertas-historico" data-produto-id="{{ produto.id }}">
+            <div class="text-center">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Carregando...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- end card-flip-back -->
+      
+    </div><!-- end card-flip-inner -->
+  </div><!-- end card-flip-container -->
   {% endfor %}
 </div>
 
@@ -580,6 +674,93 @@
       btn.classList.remove("btn-outline-info");
       btn.classList.add("btn-outline-secondary");
       btn.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
+    });
+
+    // ====== Card Flip Functionality ======
+    async function loadOfertasHistory(produtoId, containerEl) {
+      try {
+        const resp = await fetch(`/api/produtos/${produtoId}/ofertas`);
+        const data = await resp.json();
+        
+        if (data.status === "success" && data.ofertas && data.ofertas.length > 0) {
+          let html = '';
+          data.ofertas.forEach(oferta => {
+            html += `
+              <div class="oferta-item">
+                <div class="mb-2">
+                  <strong><i class="bi bi-calendar3"></i> ${oferta.data_publicacao}</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    ${oferta.preco_original !== null ? `
+                      <small class="text-muted text-decoration-line-through">
+                        Preço original: R$ ${oferta.preco_original.toFixed(2)}
+                      </small>
+                    ` : ''}
+                    ${oferta.preco_oferta !== null ? `
+                      <div>
+                        <strong class="text-success">
+                          Preço de oferta: R$ ${oferta.preco_oferta.toFixed(2)}
+                        </strong>
+                      </div>
+                    ` : ''}
+                  </div>
+                </div>
+              </div>
+            `;
+          });
+          containerEl.innerHTML = html;
+        } else {
+          containerEl.innerHTML = `
+            <div class="alert alert-info" role="alert">
+              <i class="bi bi-info-circle"></i> Nenhuma oferta publicada ainda para este produto.
+            </div>
+          `;
+        }
+      } catch (e) {
+        containerEl.innerHTML = `
+          <div class="alert alert-danger" role="alert">
+            <i class="bi bi-exclamation-triangle"></i> Erro ao carregar histórico: ${e.message}
+          </div>
+        `;
+      }
+    }
+
+    // Evento para virar o card ao clicar (somente para produtos postados)
+    document.querySelectorAll(".card-produto.clickable").forEach(card => {
+      // Adiciona o listener no card-flip-front para evitar conflitos
+      const frontCard = card.querySelector(".card-flip-front");
+      if (frontCard) {
+        frontCard.addEventListener("click", async function(e) {
+          // Ignora cliques em botões, links e campos de formulário
+          if (e.target.closest("button, a, select, input")) {
+            return;
+          }
+          
+          const produtoId = card.id.replace("produto-", "");
+          
+          if (!card.classList.contains("flipped")) {
+            card.classList.add("flipped");
+            
+            // Carrega o histórico apenas uma vez
+            const historicoContainer = card.querySelector(".ofertas-historico");
+            if (historicoContainer && !historicoContainer.hasAttribute("data-loaded")) {
+              await loadOfertasHistory(produtoId, historicoContainer);
+              historicoContainer.setAttribute("data-loaded", "true");
+            }
+          }
+        });
+      }
+    });
+
+    // Permitir voltar ao produto clicando no lado de trás do card (exceto em controles)
+    document.querySelectorAll(".card-flip-back").forEach(back => {
+      back.addEventListener("click", function(e) {
+        // não voltar se o clique for em botões/links/inputs
+        if (e.target.closest("button, a, select, input")) return;
+        const card = this.closest(".card-flip-container");
+        if (card) card.classList.remove("flipped");
+      });
     });
   });
 </script>
