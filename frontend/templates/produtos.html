@@ -9,6 +9,67 @@
   .product-image { max-width:100%; height:auto; max-height:150px; object-fit:contain; }
   .tag { cursor: default; }
 
+  /* ====== Card Flip Animation ====== */
+  .card-flip-container {
+    perspective: 1000px;
+    position: relative;
+  }
+  
+  .card-flip-inner {
+    position: relative;
+    width: 100%;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+  }
+  
+  .card-flip-container.flipped .card-flip-inner {
+    transform: rotateY(180deg);
+  }
+  
+  .card-flip-front, .card-flip-back {
+    width: 100%;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  
+  .card-flip-back {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: rotateY(180deg);
+    background: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 .125rem .25rem rgba(0,0,0,.075);
+  }
+  
+  .ofertas-historico {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+  
+  .oferta-item {
+    border-bottom: 1px solid #dee2e6;
+    padding: 0.75rem 0;
+  }
+  
+  .oferta-item:last-child {
+    border-bottom: none;
+  }
+  
+  .btn-flip-back {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #dee2e6;
+  }
+  
+  .btn-view-history {
+    cursor: pointer;
+  }
+
   /* ====== Layouts ====== */
   #produtos-container.grid-1 { display:block; }
   #produtos-container.grid-5 {
@@ -99,19 +160,23 @@
   {% endif %}
 
   {% for produto in produtos %}
-  <div class="card card-produto mb-4"
+  <div class="card card-produto mb-4 card-flip-container"
        id="produto-{{ produto.id }}"
        style="position: relative;"
        data-novo="{{ '1' if produto._e_novo else '0' }}"
        data-atualizado="{{ '1' if produto._foi_atualizado else '0' }}"
        data-postado="{{ '1' if produto._foi_postado else '0' }}"
        data-na-fila="{{ '1' if produto._na_fila else '0' }}">
-    <!-- Marcações no topo do card -->
-    {% if produto._foi_postado %}
-    <span class="badge bg-success" style="position: absolute; top: 10px; right: 10px; z-index: 10;" title="Produto já foi postado">
-      <i class="bi bi-check-circle"></i> Postado
-    </span>
-    {% endif %}
+    
+    <div class="card-flip-inner">
+      <!-- FRONT SIDE -->
+      <div class="card-flip-front">
+        <!-- Marcações no topo do card -->
+        {% if produto._foi_postado %}
+        <span class="badge bg-success" style="position: absolute; top: 10px; right: 10px; z-index: 10;" title="Produto já foi postado">
+          <i class="bi bi-check-circle"></i> Postado
+        </span>
+        {% endif %}
     
     {% if produto._na_fila %}
     <span class="badge bg-warning text-dark badge-na-fila" style="position: absolute; top: 10px; left: 10px; z-index: 10;" title="Aguardando aprovação">
@@ -231,12 +296,42 @@
             <button class="btn btn-danger btn-excluir" data-produto-id="{{ produto.id }}">
               <i class="bi bi-trash-fill"></i> Excluir
             </button>
+            
+            {% if produto._foi_postado %}
+            <button class="btn btn-outline-secondary btn-view-history" data-produto-id="{{ produto.id }}" title="Ver histórico de ofertas">
+              <i class="bi bi-clock-history"></i> Histórico
+            </button>
+            {% endif %}
           </div>
 
         </div>
       </div>
     </div>
-  </div>
+      </div><!-- end card-flip-front -->
+      
+      <!-- BACK SIDE -->
+      <div class="card-flip-back">
+        <button class="btn btn-sm btn-flip-back" title="Voltar">
+          <i class="bi bi-arrow-left"></i> Voltar
+        </button>
+        
+        <div class="card-body">
+          <h5 class="card-title mb-3">
+            <i class="bi bi-clock-history"></i> Histórico de Ofertas
+          </h5>
+          
+          <div class="ofertas-historico" data-produto-id="{{ produto.id }}">
+            <div class="text-center">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Carregando...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- end card-flip-back -->
+      
+    </div><!-- end card-flip-inner -->
+  </div><!-- end card-flip-container -->
   {% endfor %}
 </div>
 
@@ -580,6 +675,92 @@
       btn.classList.remove("btn-outline-info");
       btn.classList.add("btn-outline-secondary");
       btn.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
+    });
+
+    // ====== Card Flip Functionality ======
+    async function loadOfertasHistory(produtoId, containerEl) {
+      try {
+        const resp = await fetch(`/api/produtos/${produtoId}/ofertas`);
+        const data = await resp.json();
+        
+        if (data.status === "success" && data.ofertas && data.ofertas.length > 0) {
+          let html = '';
+          data.ofertas.forEach(oferta => {
+            html += `
+              <div class="oferta-item">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <strong><i class="bi bi-calendar3"></i> ${oferta.data_publicacao}</strong>
+                  <span class="badge bg-primary">${oferta.canal_nome}</span>
+                </div>
+                <div class="mb-1">
+                  <small class="text-muted">Loja: ${oferta.nome_loja}</small>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <div>
+                    ${oferta.preco_original !== null ? `
+                      <small class="text-muted text-decoration-line-through">
+                        R$ ${oferta.preco_original.toFixed(2)}
+                      </small>
+                    ` : ''}
+                    ${oferta.preco_oferta !== null ? `
+                      <strong class="text-success ms-2">
+                        R$ ${oferta.preco_oferta.toFixed(2)}
+                      </strong>
+                    ` : ''}
+                  </div>
+                  ${oferta.desconto_real !== null ? `
+                    <span class="badge bg-danger">${oferta.desconto_real.toFixed(0)}% OFF</span>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          });
+          containerEl.innerHTML = html;
+        } else {
+          containerEl.innerHTML = `
+            <div class="alert alert-info" role="alert">
+              <i class="bi bi-info-circle"></i> Nenhuma oferta publicada ainda para este produto.
+            </div>
+          `;
+        }
+      } catch (e) {
+        containerEl.innerHTML = `
+          <div class="alert alert-danger" role="alert">
+            <i class="bi bi-exclamation-triangle"></i> Erro ao carregar histórico: ${e.message}
+          </div>
+        `;
+      }
+    }
+
+    // Evento para virar o card e carregar histórico
+    document.querySelectorAll(".btn-view-history").forEach(btn => {
+      btn.addEventListener("click", async function(e) {
+        e.stopPropagation();
+        const produtoId = this.getAttribute("data-produto-id");
+        const card = document.getElementById("produto-" + produtoId);
+        
+        if (card && !card.classList.contains("flipped")) {
+          card.classList.add("flipped");
+          
+          // Carrega o histórico apenas uma vez
+          const historicoContainer = card.querySelector(".ofertas-historico");
+          if (historicoContainer && !historicoContainer.hasAttribute("data-loaded")) {
+            await loadOfertasHistory(produtoId, historicoContainer);
+            historicoContainer.setAttribute("data-loaded", "true");
+          }
+        }
+      });
+    });
+
+    // Evento para voltar o card
+    document.querySelectorAll(".btn-flip-back").forEach(btn => {
+      btn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        const card = this.closest(".card-flip-container");
+        if (card) {
+          card.classList.remove("flipped");
+        }
+      });
     });
   });
 </script>

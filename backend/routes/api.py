@@ -779,3 +779,46 @@ def api_delete_log(log_id):
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         db.close()
+
+@api_bp.route("/produtos/<int:produto_id>/ofertas", methods=["GET"])
+def api_get_produto_ofertas(produto_id):
+    """
+    Retorna o histórico de ofertas publicadas para um produto específico.
+    Inclui data de publicação, preço original, preço promocional de cada postagem.
+    """
+    db = SessionLocal()
+    try:
+        produto = db.get(Produto, produto_id)
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+        
+        # Busca todas as ofertas publicadas deste produto
+        ofertas_publicadas = (
+            db.query(OfertaPublicada)
+              .join(Oferta)
+              .filter(Oferta.produto_id == produto_id)
+              .order_by(OfertaPublicada.data_publicacao.desc())
+              .all()
+        )
+        
+        ofertas_data = []
+        for op in ofertas_publicadas:
+            ofertas_data.append({
+                "data_publicacao": op.data_publicacao.strftime("%d/%m/%Y %H:%M") if op.data_publicacao else "—",
+                "preco_original": float(op.preco_original) if op.preco_original is not None else None,
+                "preco_oferta": float(op.preco_oferta) if op.preco_oferta is not None else None,
+                "desconto_real": float(op.desconto_real) if op.desconto_real is not None else None,
+                "canal_nome": op.canal_nome or "—",
+                "nome_loja": op.nome_loja or "—"
+            })
+        
+        return jsonify({
+            "status": "success",
+            "produto_id": produto_id,
+            "ofertas": ofertas_data
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
