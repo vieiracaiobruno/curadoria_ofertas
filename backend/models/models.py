@@ -24,15 +24,6 @@ canal_tags = Table(
 )
 
 # --------- Modelos ---------
-class Usuario(Base):
-    __tablename__ = "usuarios"
-    __table_args__ = {'extend_existing': True}
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    email = Column(String, unique=True, nullable=False)
-    is_admin = Column(Boolean, default=False)
-
 class LojaConfiavel(Base):
     __tablename__ = "lojas_confiaveis"
     __table_args__ = {'extend_existing': True}
