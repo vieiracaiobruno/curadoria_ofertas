@@ -8,7 +8,7 @@ from datetime import datetime
 from ..db.database import DATABASE_URL, Base, SessionLocal
 from ..models.models import Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, MetricaOferta, OfertaPublicada, HistoricoPreco, ConfigVar, LogColeta
 from backend.modules.utils.config import get_config, set_config, list_configs
-from backend.modules.publisher import Publisher
+from backend.modules.services.publisher import Publisher
 
 api_bp = Blueprint("api", __name__)
 

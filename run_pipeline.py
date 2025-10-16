@@ -20,9 +20,9 @@ sys.path.insert(0, project_root)
 from backend.db.database import SessionLocal
 from backend.modules.collectors.ml_collector import MLCollector
 from backend.modules.services.offer_processor import OfferProcessor
-from backend.modules.validator import Validator
-from backend.modules.publisher import Publisher
-from backend.modules.metrics_analyzer import MetricsAnalyzer
+from backend.modules.services.validator import Validator
+from backend.modules.services.publisher import Publisher
+from backend.modules.services.metrics_analyzer import MetricsAnalyzer
 
 
 logging.basicConfig(
