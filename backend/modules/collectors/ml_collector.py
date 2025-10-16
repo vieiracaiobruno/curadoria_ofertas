@@ -506,13 +506,13 @@ class MLCollector(BaseCollector):
                 node = node.get("track", {})
                 node = node.get("melidata_event", {})
                 node = node.get("event_data", {})
-                id = node.get("official_store_id") or node.get("official-store-id")
-                if isinstance(id, int):
-                    return str(id)
+                official_id = node.get("official_store_id") or node.get("official-store-id")
+                if isinstance(official_id, int):
+                    return str(official_id)
                 else:
-                    id = node.get("seller_id") or node.get("seller-id")
-                    if isinstance(id, int):
-                        return str(id)
+                    seller_id_val = node.get("seller_id") or node.get("seller-id")
+                    if isinstance(seller_id_val, int):
+                        return str(seller_id_val)
                 return None
         except Exception:
             return None
