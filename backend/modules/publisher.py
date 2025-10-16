@@ -225,6 +225,16 @@ class Publisher:
             oferta.status = "REJEITADA_SEM_CANAL"
             print(f"Oferta {oferta.id} não publicada: nenhum canal apto.")
 
+    def publicar_oferta_individual(self, oferta):
+        """
+        Publica uma única oferta aprovada no Telegram.
+        Método público para uso externo.
+        
+        Args:
+            oferta: Instância de Oferta a ser publicada
+        """
+        self._publicar_oferta(oferta)
+
     def run_publication(self):
         """
         Publica ofertas aprovadas. Ajustado para usar campos de preço em Produto.

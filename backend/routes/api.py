@@ -131,7 +131,7 @@ def api_aprovar_oferta(oferta_id):
 
         # NOVO: Publicar imediatamente após aprovar
         publisher = Publisher(db)
-        publisher._publicar_oferta(oferta)  # Função que publica só esta oferta
+        publisher.publicar_oferta_individual(oferta)  # Função que publica só esta oferta
 
         db.commit()
         return jsonify({"status": "success", "message": "Oferta aprovada e publicada com sucesso!"}), 200
