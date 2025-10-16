@@ -78,12 +78,6 @@ class OfferProcessor:
         norm_name = self._normalize_text(product_name)
         return [self._tags_by_norm[n] for n, pat in self._tag_patterns.items() if pat.search(norm_name)]
 
-    def _eligible_by_db_tags(self, product_name: str) -> Tuple[bool, List[Tag]]:
-        if not self._tags_norm:
-            return (not self.require_db_tag_match, [])
-        matched = self._match_db_tags_in_name(product_name)
-        return (len(matched) > 0, matched)
-
     # ================= Logging =================
     def _log_error(self, product_url: str, mensagem: str, etapa: str, product_data: dict, store_info: dict):
         try:
@@ -207,9 +201,14 @@ class OfferProcessor:
             outcome = "novo_produto_sem_oferta_store_inativa" if product_created else "existente_sem_oferta_store_inativa"
             return False, outcome
 
-        eligible, _ = self._eligible_by_db_tags(nome_produto)
-        if not eligible:
-            outcome = "novo_produto_sem_oferta_tag_ineligible" if product_created else "existente_sem_oferta_tag_ineligible"
+        # Produto precisa ter ao menos uma tag cadastrada para ser elegível
+        try:
+            has_tags = bool(getattr(produto, "tags", None) and len(produto.tags) > 0)
+        except Exception:
+            has_tags = False
+
+        if not has_tags:
+            outcome = "novo_produto_sem_oferta_sem_tags" if product_created else "existente_sem_oferta_sem_tags"
             return False, outcome
 
         if self._has_open_offer(produto.id, loja.id):

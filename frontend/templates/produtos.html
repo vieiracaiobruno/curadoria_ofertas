@@ -432,31 +432,61 @@
       });
       let data = null;
       try { data = await resp.json(); } catch (_) { /* noop */ }
+
       if (resp.ok && data && data.status === "success") {
         const reprocMsg = data?.message || "Tag adicionada e produto reprocessado.";
-        alert(`${reprocMsg}`);
+        alert(reprocMsg);
 
         // Atualiza visualmente o card: adiciona o badge da nova tag
         const card = document.getElementById("produto-" + produtoId);
         if (card) {
-          // Encontra o container das tags
           const tagsDiv = card.querySelector(".tags-container");
           if (tagsDiv) {
-            // Adiciona o badge da nova tag antes do texto "—"
             let badge = document.createElement("span");
             badge.className = "badge bg-primary p-2 me-1 tag";
             badge.textContent = "#" + tagName;
-            // Remove o texto "—" se existir
             let dash = tagsDiv.querySelector(".text-muted");
             if (dash) dash.remove();
             tagsDiv.appendChild(badge);
           }
-          // Remove a tag recém-incluída do select
           const sel = card.querySelector(".sel-tag-existente");
           if (sel) {
             const opt = sel.querySelector(`option[value="${tagName}"]`);
             if (opt) opt.remove();
             sel.value = "";
+          }
+
+          // Agora tentamos criar a oferta explicitamente.
+          // Somente se a criação retornar sucesso mostramos "Na fila" e desabilitamos o botão Oferta.
+          try {
+            const resp2 = await fetch(`/api/produtos/${produtoId}/criar_oferta`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" }
+            });
+            let data2 = null;
+            try { data2 = await resp2.json(); } catch (_) { data2 = null; }
+
+            if (resp2.ok && data2 && data2.status === "success") {
+              // oferta realmente criada -> marcar Na fila e desabilitar botão Oferta
+              addNaFilaBadge(card);
+              const ofertaBtn = card.querySelector(".btn-oferta");
+              if (ofertaBtn) {
+                ofertaBtn.classList.remove("btn-outline-info");
+                ofertaBtn.classList.add("btn-outline-secondary");
+                ofertaBtn.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
+                ofertaBtn.disabled = true;
+              }
+            } else {
+              // Não criou oferta: não mostrar badge "Na fila".
+              // Opcional: informar o motivo ao usuário (se houver)
+              if (data2 && data2.message) {
+                console.info("Oferta não criada:", data2.message);
+              } else {
+                console.info("Oferta não criada (sem mensagem).");
+              }
+            }
+          } catch (e) {
+            console.error("Erro ao tentar criar oferta após adicionar tag:", e);
           }
         }
       } else {
