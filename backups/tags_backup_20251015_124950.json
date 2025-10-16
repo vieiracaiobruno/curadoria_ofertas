@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "nome_tag": "smartphone"
+  },
+  {
+    "id": 2,
+    "nome_tag": "tv"
+  },
+  {
+    "id": 3,
+    "nome_tag": "celular"
+  },
+  {
+    "id": 4,
+    "nome_tag": "monitor"
+  }
+]

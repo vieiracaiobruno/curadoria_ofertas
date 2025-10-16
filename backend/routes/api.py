@@ -492,37 +492,51 @@ def api_list_tags():
 
 @api_bp.route("/produtos/<int:produto_id>/criar_oferta", methods=["POST"])
 def api_criar_oferta_produto(produto_id):
-    """Cria uma oferta para o produto e envia para fila de aprovação."""
+    """
+    Em vez de criar oferta cegamente, reprocessa o produto e aplica a
+    mesma lógica de elegibilidade/criação usada em api_ativar_loja_por_produto.
+    Retorna sucesso apenas se a oferta foi criada pelo OfferProcessor.
+    """
     db = SessionLocal()
     try:
         produto = db.get(Produto, produto_id)
         if not produto:
             return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
-        
-        # Busca loja associada
-        loja = db.query(LojaConfiavel).filter(LojaConfiavel.id_loja_api == produto.product_id_loja).first()
-        if not loja:
-            return jsonify({"status": "error", "message": "Loja não encontrada para este produto."}), 404
-        
-        # Verifica se já existe uma oferta pendente para este produto
-        oferta_existente = db.query(Oferta).filter(
-            Oferta.produto_id == produto_id,
-            Oferta.status == "PENDENTE_APROVACAO"
-        ).first()
-        
-        if oferta_existente:
-            return jsonify({"status": "error", "message": "Já existe uma oferta pendente para este produto."}), 400
-        
-        # Cria nova oferta
-        nova_oferta = Oferta(
-            produto_id=produto_id,
-            loja_id=loja.id,
-            status="PENDENTE_APROVACAO"
-        )
-        db.add(nova_oferta)
-        db.commit()
-        
-        return jsonify({"status": "success", "message": "Oferta criada e enviada para aprovação!"}), 200
+
+        # Executa a lógica completa (elegibilidade + criação de oferta) igual ao _api_reprocess_single_product
+        reprocess_resp = _api_reprocess_single_product(produto_id)
+
+        # Pode ser (Response, status) ou Response
+        if isinstance(reprocess_resp, tuple):
+            resp_obj, resp_status = reprocess_resp
+        else:
+            resp_obj, resp_status = reprocess_resp, 200
+
+        try:
+            reprocess_data = resp_obj.get_json()
+        except Exception:
+            try:
+                import json as _json
+                reprocess_data = _json.loads(resp_obj.get_data(as_text=True))
+            except Exception:
+                reprocess_data = {"status": "error", "message": "Falha ao ler JSON do reprocessamento"}
+
+        # Se o OfferProcessor criou a oferta, retorne sucesso; caso contrário, detalhe o motivo
+        if reprocess_data.get("status") == "success":
+            return jsonify({
+                "status": "success",
+                "message": "Oferta criada com sucesso.",
+                "reprocess": reprocess_data
+            }), 200
+        else:
+            # Propaga 422 com o motivo (outcome) quando não elegível
+            reason = reprocess_data.get("outcome") or reprocess_data.get("message") or "não elegível"
+            return jsonify({
+                "status": "error",
+                "message": f"Produto não pôde gerar oferta: {reason}",
+                "reprocess": reprocess_data
+            }), 422
+
     except Exception as e:
         db.rollback()
         return jsonify({"status": "error", "message": str(e)}), 500
