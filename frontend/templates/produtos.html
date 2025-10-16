@@ -43,41 +43,40 @@
   }
   
   .ofertas-historico {
-    max-height: 400px;
-    overflow-y: auto;
-    padding: 1rem;
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+    align-items: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.5rem;
+    max-height: 120px; /* mantém limite vertical */
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    font-size: 0.78rem; /* fonte menor */
   }
   
   .oferta-item {
-    border-bottom: 1px solid #dee2e6;
-    padding: 0.75rem 0;
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-width: 180px; /* largura mínima de cada bloco de oferta */
+    max-width: 220px;
+    padding: 0.45rem;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.02);
+    box-shadow: none;
+    margin: 0;
+    white-space: normal;
+    font-size: 0.78rem; /* mesma fonte reduzida */
   }
-  
-  .oferta-item:last-child {
-    border-bottom: none;
-  }
-  
-  .btn-flip-back {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    z-index: 10;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid #dee2e6;
-  }
-  
-  .btn-view-history {
-    cursor: pointer;
-  }
-  
-  /* Indicador visual para cards clicáveis (produtos postados) */
-  .card-produto.clickable {
-    cursor: pointer;
-  }
-  
-  .card-produto.clickable:hover .card-flip-front {
-    box-shadow: 0 .5rem 1.5rem rgba(0,0,0,.2);
-  }
+
+  .oferta-item .mb-2 { margin-bottom: .35rem; }
+  .oferta-item .text-muted { font-size: 0.72rem; }
+
+  /* adaptar para modo compacto (5 por linha) */
+  #produtos-container.grid-5 .ofertas-historico { max-height: 100px; font-size: 0.75rem; }
+  #produtos-container.grid-5 .oferta-item { min-width: 150px; max-width: 180px; font-size: 0.75rem; }
 
   /* ====== Layouts ====== */
   #produtos-container.grid-1 { display:block; }
@@ -314,13 +313,10 @@
       
       <!-- BACK SIDE -->
       <div class="card-flip-back">
-        <button class="btn btn-sm btn-flip-back" title="Voltar">
-          <i class="bi bi-arrow-left"></i> Voltar
-        </button>
         
         <div class="card-body">
           <h5 class="card-title mb-3">
-            <i class="bi bi-clock-history"></i> Histórico de Ofertas
+            <i class="bi bi-clock-history"></i> Ofertas
           </h5>
           
           <div class="ofertas-historico" data-produto-id="{{ produto.id }}">
@@ -757,14 +753,13 @@
       }
     });
 
-    // Evento para voltar o card
-    document.querySelectorAll(".btn-flip-back").forEach(btn => {
-      btn.addEventListener("click", function(e) {
-        e.stopPropagation();
+    // Permitir voltar ao produto clicando no lado de trás do card (exceto em controles)
+    document.querySelectorAll(".card-flip-back").forEach(back => {
+      back.addEventListener("click", function(e) {
+        // não voltar se o clique for em botões/links/inputs
+        if (e.target.closest("button, a, select, input")) return;
         const card = this.closest(".card-flip-container");
-        if (card) {
-          card.classList.remove("flipped");
-        }
+        if (card) card.classList.remove("flipped");
       });
     });
   });
