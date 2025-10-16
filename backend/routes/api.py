@@ -490,6 +490,59 @@ def api_list_tags():
     finally:
         db.close()
 
+@api_bp.route("/produtos/<int:produto_id>/criar_oferta", methods=["POST"])
+def api_criar_oferta_produto(produto_id):
+    """
+    Em vez de criar oferta cegamente, reprocessa o produto e aplica a
+    mesma lógica de elegibilidade/criação usada em api_ativar_loja_por_produto.
+    Retorna sucesso apenas se a oferta foi criada pelo OfferProcessor.
+    """
+    db = SessionLocal()
+    try:
+        produto = db.get(Produto, produto_id)
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+
+        # Executa a lógica completa (elegibilidade + criação de oferta) igual ao _api_reprocess_single_product
+        reprocess_resp = _api_reprocess_single_product(produto_id)
+
+        # Pode ser (Response, status) ou Response
+        if isinstance(reprocess_resp, tuple):
+            resp_obj, resp_status = reprocess_resp
+        else:
+            resp_obj, resp_status = reprocess_resp, 200
+
+        try:
+            reprocess_data = resp_obj.get_json()
+        except Exception:
+            try:
+                import json as _json
+                reprocess_data = _json.loads(resp_obj.get_data(as_text=True))
+            except Exception:
+                reprocess_data = {"status": "error", "message": "Falha ao ler JSON do reprocessamento"}
+
+        # Se o OfferProcessor criou a oferta, retorne sucesso; caso contrário, detalhe o motivo
+        if reprocess_data.get("status") == "success":
+            return jsonify({
+                "status": "success",
+                "message": "Oferta criada com sucesso.",
+                "reprocess": reprocess_data
+            }), 200
+        else:
+            # Propaga 422 com o motivo (outcome) quando não elegível
+            reason = reprocess_data.get("outcome") or reprocess_data.get("message") or "não elegível"
+            return jsonify({
+                "status": "error",
+                "message": f"Produto não pôde gerar oferta: {reason}",
+                "reprocess": reprocess_data
+            }), 422
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
+
 @api_bp.route("/produtos/<int:produto_id>/tags", methods=["POST"])
 def api_add_tags_to_product(produto_id):
     """

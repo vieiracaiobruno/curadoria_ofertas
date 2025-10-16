@@ -26,6 +26,7 @@
     line-height: 1.2;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     margin-bottom: .25rem !important;
@@ -91,7 +92,30 @@
   {% endif %}
 
   {% for produto in produtos %}
-  <div class="card card-produto mb-4" id="produto-{{ produto.id }}">
+  <div class="card card-produto mb-4" id="produto-{{ produto.id }}" style="position: relative;">
+    <!-- Marcações no topo do card -->
+    {% if produto._foi_postado %}
+    <span class="badge bg-success" style="position: absolute; top: 10px; right: 10px; z-index: 10;" title="Produto já foi postado">
+      <i class="bi bi-check-circle"></i> Postado
+    </span>
+    {% endif %}
+    
+    {% if produto._na_fila %}
+    <span class="badge bg-warning text-dark badge-na-fila" style="position: absolute; top: 10px; left: 10px; z-index: 10;" title="Aguardando aprovação">
+      <i class="bi bi-clock"></i> Na fila
+    </span>
+    {% endif %}
+    
+    {% if produto._e_novo %}
+    <span class="badge bg-info" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10;" title="Produto novo (últimas 24h)">
+      <i class="bi bi-star"></i> Novo
+    </span>
+    {% elif produto._foi_atualizado %}
+    <span class="badge bg-secondary" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10;" title="Produto atualizado (últimas 24h)">
+      <i class="bi bi-arrow-repeat"></i> Atualizado
+    </span>
+    {% endif %}
+    
     <div class="row g-0">
       <div class="col-md-2 d-flex align-items-center justify-content-center p-3">
         <img src="{{ produto.imagem_url or url_for('static', filename='placeholder.png') }}"
@@ -178,12 +202,17 @@
               <i class="bi bi-box-arrow-up-right"></i> Link
             </a>
 
-            <button class="btn btn-outline-primary btn-ativar-loja" data-produto-id="{{ produto.id }}">
-              <i class="bi bi-shop"></i> Ativar loja
+            <button
+              class="btn btn-ativar-loja {{ 'btn-outline-secondary' if produto._loja_ativa else 'btn-outline-primary' }}"
+              data-produto-id="{{ produto.id }}"
+              {% if produto._loja_ativa %}disabled aria-disabled="true" title="Loja já ativa"{% endif %}>
+              <i class="bi bi-shop"></i> {{ 'Loja ativa' if produto._loja_ativa else 'Ativar loja' }}
             </button>
 
-            <button class="btn btn-outline-secondary btn-manter" data-produto-id="{{ produto.id }}">
-              <i class="bi bi-check-circle"></i> Manter
+            <button class="btn btn-outline-info btn-oferta"
+                    data-produto-id="{{ produto.id }}"
+                    {% if produto._na_fila %}disabled aria-disabled="true" title="Produto já está na fila"{% endif %}>
+              <i class="bi bi-send"></i> Oferta
             </button>
 
             <button class="btn btn-danger btn-excluir" data-produto-id="{{ produto.id }}">
@@ -237,11 +266,60 @@
       document.getElementById("contador-produtos").textContent = n;
     }
 
-    document.querySelectorAll(".btn-manter").forEach(btn => {
-      btn.addEventListener("click", function () {
-        const id = this.dataset.produtoId;
+    function addNaFilaBadge(cardEl) {
+      if (!cardEl) return;
+      if (cardEl.querySelector(".badge-na-fila")) return;
+      const badge = document.createElement("span");
+      badge.className = "badge bg-warning text-dark badge-na-fila";
+      badge.style.position = "absolute";
+      badge.style.top = "10px";
+      badge.style.left = "10px";
+      badge.style.zIndex = "10";
+      badge.title = "Aguardando aprovação";
+      badge.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
+      cardEl.appendChild(badge);
+    }
+
+    document.querySelectorAll(".btn-oferta").forEach(btn => {
+      btn.addEventListener("click", async function () {
+        const btnEl = this;
+        const id = btnEl.dataset.produtoId;
         const card = document.getElementById("produto-" + id);
-        if (card) { card.remove(); updateCounter(); }
+        if (!confirm("Enviar este produto para a fila de aprovação?")) return;
+
+        // loading state
+        const originalHtml = btnEl.innerHTML;
+        btnEl.disabled = true;
+        btnEl.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Enviando...`;
+
+        try {
+          const resp = await fetch(`/api/produtos/${id}/criar_oferta`, { method: "POST" });
+          let data = null;
+          try { data = await resp.json(); } catch (_) { data = null; }
+
+          if (resp.ok && data && data.status === "success") {
+            // Marca visualmente como "Na fila" imediatamente
+            addNaFilaBadge(card);
+            // Atualiza o botão de oferta para evitar cliques duplicados
+            btnEl.classList.remove("btn-outline-info");
+            btnEl.classList.add("btn-outline-secondary");
+            btnEl.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
+            btnEl.disabled = true;
+            alert(data.message || "Oferta criada e enviada para fila!");
+          } else {
+            const reason =
+              (data && (data.message || (data.reprocess && data.reprocess.outcome))) ||
+              `HTTP ${resp.status}`;
+            alert("Não foi possível criar a oferta:\n" + reason);
+            // restaura botão
+            btnEl.disabled = false;
+            btnEl.innerHTML = originalHtml;
+          }
+        } catch (e) {
+          alert("Falha na requisição: " + e);
+          btnEl.disabled = false;
+          btnEl.innerHTML = originalHtml;
+        }
       });
     });
 
@@ -264,34 +342,59 @@
       });
     });
 
-    async function ativarLoja(produtoId) {
+    // Garantir rótulo correto nos botões já desabilitados (loja ativa)
+    document.querySelectorAll(".btn-ativar-loja[disabled]").forEach(b => {
+      b.classList.remove("btn-outline-primary");
+      b.classList.add("btn-outline-secondary");
+      b.innerHTML = `<i class="bi bi-shop"></i> Loja ativa`;
+    });
+
+    async function ativarLoja(produtoId, btnEl) {
+      const originalHtml = btnEl.innerHTML;
+      btnEl.disabled = true;
+      btnEl.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Ativando...`;
+
       try {
         const resp = await fetch(`/api/lojas/ativar_by_produto/${produtoId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" }
         });
 
-        // tenta ler json mesmo em erro para capturar alguma mensagem útil
         let data = null;
         try { data = await resp.json(); } catch (_) { /* noop */ }
 
         if (resp.ok && data && data.status === "success") {
-          const lojaNome = data?.loja?.nome_loja || "(sem nome)";
-          const reprocMsg = data?.message || "Reprocessamento: sem mensagem.";
-          alert(`Loja ativada: ${lojaNome}\n${reprocMsg}`);
+          // Atualiza o botão para "Loja ativa"
+          btnEl.classList.remove("btn-outline-primary");
+          btnEl.classList.add("btn-outline-secondary");
+          btnEl.innerHTML = `<i class="bi bi-shop"></i> Loja ativa`;
+          btnEl.disabled = true;
+
+          // Se o reprocessamento criou/colocou oferta na fila, já mostrar o badge
+          const card = document.getElementById("produto-" + produtoId);
+          const outcome = data?.reprocess?.outcome || data?.outcome || "";
+          const statusOk = data?.reprocess?.status === "success" || data?.status === "success";
+          if (statusOk || /oferta|fila|criada|aprov/i.test(outcome)) {
+            addNaFilaBadge(card);
+          }
         } else {
           const msg = (data && (data.message || data.error)) || "Loja não cadastrada para este produto.";
           alert("Falha ao ativar loja: " + msg);
+          btnEl.disabled = false;
+          btnEl.innerHTML = originalHtml;
         }
       } catch (e) {
         alert("Falha na requisição para ativar loja: " + e);
+        btnEl.disabled = false;
+        btnEl.innerHTML = originalHtml;
       }
     }
 
     document.querySelectorAll(".btn-ativar-loja").forEach(btn => {
       btn.addEventListener("click", () => {
+        if (btn.disabled) return;
         const pid = btn.getAttribute("data-produto-id");
-        if (pid) ativarLoja(pid);
+        if (pid) ativarLoja(pid, btn);
       });
     });
 
@@ -368,6 +471,13 @@
         const tag = sel?.value || "";
         addTagProduto(pid, tag);
       });
+    });
+
+    // Ajusta visual dos botões "Oferta" já desabilitados (produto na fila ao carregar a página)
+    document.querySelectorAll(".btn-oferta[disabled]").forEach(btn => {
+      btn.classList.remove("btn-outline-info");
+      btn.classList.add("btn-outline-secondary");
+      btn.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
     });
   });
 </script>

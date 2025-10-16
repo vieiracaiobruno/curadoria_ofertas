@@ -1,0 +1,65 @@
+[
+  {
+    "key": "ML_MAX_PAGES",
+    "value": "1",
+    "is_secret": false,
+    "description": "Quantidade de paginação",
+    "updated_at": "2025-10-12T17:51:40.786026"
+  },
+  {
+    "key": "ML_REQUEST_DELAY_SEC",
+    "value": "6",
+    "is_secret": false,
+    "description": "Delay entre chamadas no site",
+    "updated_at": "2025-10-11T00:40:29.736228"
+  },
+  {
+    "key": "REQUIRE_DB_TAG_MATCH",
+    "value": "false",
+    "is_secret": false,
+    "description": "Se precisa de tag para lançar a oferta",
+    "updated_at": "2025-09-13T17:18:15.004001"
+  },
+  {
+    "key": "AUTO_TAG_ON_COLLECT",
+    "value": "true",
+    "is_secret": false,
+    "description": "Decide se vai gravar os produtos na tabela com tag ou sem tag",
+    "updated_at": "2025-09-13T17:10:09.373672"
+  },
+  {
+    "key": "ML_ENRICH_WORKERS",
+    "value": "4",
+    "is_secret": false,
+    "description": "Quantidade de browsers abertos",
+    "updated_at": "2025-10-11T11:48:32.365914"
+  },
+  {
+    "key": "SELENIUM_DELAY_SEC",
+    "value": "2",
+    "is_secret": false,
+    "description": "Delay de chamadas no Selenium",
+    "updated_at": "2025-10-06T20:33:27.211615"
+  },
+  {
+    "key": "SELENIUM_USER_DATA_DIR",
+    "value": "C:\\Temp\\ChromeSelenium",
+    "is_secret": false,
+    "description": "Diretório do selenium",
+    "updated_at": "2025-10-06T20:57:20.824205"
+  },
+  {
+    "key": "SELENIUM_PROFILE_DIR",
+    "value": "Default",
+    "is_secret": false,
+    "description": "Perfil que o selenium usa",
+    "updated_at": "2025-10-06T20:57:32.303606"
+  },
+  {
+    "key": "USE_SELENIUM",
+    "value": "false",
+    "is_secret": false,
+    "description": "Liga ou desliga Selenium",
+    "updated_at": "2025-10-11T16:15:54.181965"
+  }
+]

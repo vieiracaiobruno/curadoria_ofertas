@@ -2,98 +2,166 @@
 
 {% block title %}Ofertas Publicadas{% endblock %}
 
+{% block head_extra %}
+<style>
+  /* Tipografia e espaçamento uniformes */
+  .pub-card { border-radius: 0.5rem; box-shadow: 0 6px 18px rgba(18,38,63,0.06); overflow: hidden; }
+  .pub-table { font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; font-size: 0.88rem; }
+  .pub-table thead { background: linear-gradient(90deg,#f8f9fa,#eef3f8); }
+  .pub-table th { font-weight: 600; color: #2c3e50; vertical-align: middle; }
+  .pub-table tbody tr:hover { background: #fbfdff; }
+  .pub-table td, .pub-table th { padding: 0.45rem 0.6rem; vertical-align: middle; }
+
+  /* Imagem menor para caber mais linhas */
+  .thumb {
+    width: 48px; height: 48px; display:inline-flex; align-items:center; justify-content:center;
+    background:#fff; border-radius:6px; overflow:hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .thumb img { max-width:100%; max-height:100%; object-fit:contain; }
+
+  /* Produto name truncate (mesma fonte/size que tabela) */
+  .prod-name { max-width: 220px; display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Badges: somente desconto e tags com fundo colorido */
+  .tag-badge { font-size: 0.72rem; padding: .25rem .4rem; border-radius: .35rem; background:#0d6efd; color:#fff; }
+  .discount-badge { font-size: 0.72rem; padding: .25rem .4rem; border-radius: .35rem; background:#dc3545; color:#fff; }
+
+  /* Channels: sem fundo colorido, apenas texto com cor */
+  .channel-label { font-size: 0.72rem; color:#0a58ca; margin-right:.35rem; }
+
+  /* Metadados */
+  .meta-muted { font-size: .82rem; color:#6c757d; }
+
+  /* Link botão */
+  .btn-see { padding: .28rem .5rem; font-size:.82rem; }
+
+  /* Responsivo */
+  @media (max-width: 900px) { .prod-name { max-width: 140px; } }
+  @media (max-width: 640px) {
+    .pub-table thead th:nth-child(5),
+    .pub-table thead th:nth-child(6),
+    .pub-table thead th:nth-child(7) { display: none; }
+    .pub-table tbody td:nth-child(5),
+    .pub-table tbody td:nth-child(6),
+    .pub-table tbody td:nth-child(7) { display: none; }
+    .thumb { width:44px; height:44px; }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<h1 class="mb-4">Ofertas Publicadas</h1>
+<div class="mb-3 d-flex justify-content-between align-items-center">
+  <h4 class="m-0">Ofertas Publicadas <small class="text-muted">({{ ofertas|length }})</small></h4>
+</div>
 
 {% if not ofertas %}
   <div class="alert alert-info">Nenhuma oferta publicada.</div>
 {% else %}
-  <div class="table-responsive card mb-4">
-    <table class="table table-sm table-striped align-middle">
-      <thead>
-        <tr>
-          <th>Imagem</th>
-          <th>Produto</th>
-          <th>Loja</th>
-          <th>Preço Oferta</th>
-          <th>Preço Original</th>
-          <th>Desconto</th>
-          <th>Tags</th>
-          <th>Canais Publicados</th>
-          <th>Data Publicação</th>
-          <th>Link</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for oferta in ofertas %}
-        {% set p = oferta.produto %}
-        <tr>
-          <td style="width:80px;">
-            {% if p and p.imagem_url %}
-              <img src="{{ p.imagem_url }}" alt="img" style="max-width:70px;max-height:70px;">
-            {% else %}
-              <span class="text-muted small">—</span>
-            {% endif %}
-          </td>
-          <td>
-            {{ p.nome_produto if p else '—' }}
-          </td>
-          <td>
-            {{ oferta.loja.nome_loja if oferta.loja else '—' }}
-          </td>
-          <td>
-            {% if p and p.preco_oferta is not none %}
-              R$ {{ '%.2f'|format(p.preco_oferta) }}
-            {% else %}
-              —
-            {% endif %}
-          </td>
-          <td>
-            {% if p and p.preco_original %}
-              R$ {{ '%.2f'|format(p.preco_original) }}
-            {% else %}
-              —
-            {% endif %}
-          </td>
-          <td>
-            {% if p and p.desconto_real %}
-              {{ '%.0f'|format(p.desconto_real) }}%
-            {% else %}
-              —
-            {% endif %}
-          </td>
-          <td>
-            {% if p and p.tags %}
-              {% for tag in p.tags %}
-                <span class="badge bg-primary me-1">#{{ tag.nome_tag }}</span>
-              {% endfor %}
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if canais_por_oferta and canais_por_oferta.get(oferta.id) %}
-              {{ canais_por_oferta.get(oferta.id)|join(', ') }}
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-          <td>
-            {{ oferta.data_publicacao.strftime('%d/%m/%Y %H:%M') if oferta.data_publicacao else '—' }}
-          </td>
-          <td>
-            {% if p and p.url_base %}
-              <a href="{{ p.url_base }}" target="_blank" class="btn btn-sm btn-outline-primary">Ver</a>
-            {% else %}
-              —
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="card pub-card mb-4">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-borderless pub-table mb-0 align-middle">
+          <thead>
+            <tr>
+              <th style="width:64px">Imagem</th>
+              <th>Produto</th>
+              <th>Loja</th>
+              <th>Preço</th>
+              <th>Preço Original</th>
+              <th>Desconto</th>
+              <th>Tags</th>
+              <th>Canais</th>
+              <th>Data</th>
+              <th style="width:84px">Link</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for oferta_pub in ofertas %}
+            <tr>
+              <td>
+                <div class="thumb">
+                  {% if oferta_pub.imagem_url %}
+                    <img src="{{ oferta_pub.imagem_url }}" alt="img">
+                  {% else %}
+                    <span class="text-muted small">—</span>
+                  {% endif %}
+                </div>
+              </td>
+
+              <td>
+                <div class="prod-name" title="{{ oferta_pub.nome_produto }}">{{ oferta_pub.nome_produto or '—' }}</div>
+                <div class="meta-muted">{{ oferta_pub.oferta_id and ('ID ' ~ oferta_pub.oferta_id) or '' }}</div>
+              </td>
+
+              <td>
+                <div>{{ oferta_pub.nome_loja or '—' }}</div>
+              </td>
+
+              <td>
+                {% if oferta_pub.preco_oferta is not none %}
+                  <div class="fw-bold text-success">R$ {{ '%.2f'|format(oferta_pub.preco_oferta) }}</div>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+
+              <td>
+                {% if oferta_pub.preco_original %}
+                  <div class="text-muted">R$ {{ '%.2f'|format(oferta_pub.preco_original) }}</div>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+
+              <td>
+                {% if oferta_pub.desconto_real %}
+                  <span class="discount-badge">-{{ '%.0f'|format(oferta_pub.desconto_real) }}%</span>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+
+              <td>
+                {% if oferta_pub.oferta and oferta_pub.oferta.produto and oferta_pub.oferta.produto.tags %}
+                  {% for tag in oferta_pub.oferta.produto.tags %}
+                    <span class="tag-badge me-1">#{{ tag.nome_tag }}</span>
+                  {% endfor %}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+
+              <td>
+                {% if canais_por_oferta and canais_por_oferta.get(oferta_pub.oferta_id) %}
+                  {% for c in canais_por_oferta.get(oferta_pub.oferta_id) %}
+                    <span class="channel-label">{{ c }}</span>
+                  {% endfor %}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+
+              <td>
+                <div class="meta-muted">
+                  {{ oferta_pub.data_publicacao.strftime('%d/%m/%Y %H:%M') if oferta_pub.data_publicacao else '—' }}
+                </div>
+              </td>
+
+              <td>
+                {% if oferta_pub.url_afiliado_curta %}
+                  <a href="{{ oferta_pub.url_afiliado_curta }}" target="_blank" class="btn btn-sm btn-outline-primary btn-see">Ver</a>
+                {% elif oferta_pub.oferta and oferta_pub.oferta.produto and oferta_pub.oferta.produto.url_base %}
+                  <a href="{{ oferta_pub.oferta.produto.url_base }}" target="_blank" class="btn btn-sm btn-outline-primary btn-see">Ver</a>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 {% endif %}
 {% endblock %}
-
-

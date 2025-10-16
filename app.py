@@ -1,6 +1,5 @@
 import os
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from datetime import datetime
 from dotenv import load_dotenv
 import ssl
@@ -10,8 +9,7 @@ load_dotenv('config.env')
 
 # DB e Models (use SEMPRE os objetos do database.py)
 from backend.db.database import SessionLocal, engine, create_db_tables
-from backend.models.models import Usuario, Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, LogColeta
-from backend.modules.utils.auth import hash_password, check_password
+from backend.models.models import Oferta, LojaConfiavel, Tag, CanalTelegram, Produto, LogColeta
 from sqlalchemy.orm import joinedload, selectinload
 import unicodedata, re
 
@@ -25,63 +23,6 @@ app = Flask(__name__, template_folder='./frontend/templates', static_folder='./f
 #app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "sua_chave_secreta_aqui_para_producao")
 app.config["SECRET_KEY"] = get_config("SECRET_KEY", "sua_chave_secreta_aqui_para_producao")  # :contentReference[oaicite:10]{index=10}
 
-# Login
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = "login"
-
-# Classe compatível com Flask-Login
-class UserLogin(UserMixin):
-    def __init__(self, user: Usuario):
-        self.id = user.id
-        self.username = user.username
-        self.email = user.email
-        self.is_admin = user.is_admin
-
-@login_manager.user_loader
-def load_user(user_id):
-    try:
-        uid = int(user_id)
-    except ValueError:
-        return None
-    # Fecha a sessão automaticamente ao fim do bloco
-    with SessionLocal() as db:
-        user = db.get(Usuario, uid)  # SQLAlchemy 2.x
-        return UserLogin(user) if user else None
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
-
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-
-        with SessionLocal() as db:
-            user = db.query(Usuario).filter_by(username=username).first()
-
-        #if user and check_password(password, user.password_hash):
-        #    login_user(UserLogin(user))
-        #    flash("Login bem-sucedido!", "success")
-        #    return redirect(url_for("dashboard"))
-        #else:
-        #    flash("Nome de usuário ou senha inválidos.", "danger")
-
-
-        login_user(UserLogin(user))
-        flash("Login bem-sucedido!", "success")
-        return redirect(url_for("dashboard"))
-
-    return render_template("login.html")
-
-@app.route("/logout")
-@login_required
-def logout():
-    logout_user()
-    flash("Você foi desconectado.", "info")
-    return redirect(url_for("login"))
-
 def _norm(s: str) -> str:
     s = (s or "").strip().lower()
     s = unicodedata.normalize("NFKD", s)
@@ -94,15 +35,13 @@ def _compile_pat(token: str):
     return re.compile(re.escape(token), re.I)
 
 @app.route("/lojas-confiaveis")
-@login_required
 def lojas_confiaveis():
     with SessionLocal() as db:
-        lojas = db.query(LojaConfiavel).all()
+        lojas = db.query(LojaConfiavel).order_by(LojaConfiavel.nome_loja).all()
     return render_template("lojas_confiaveis.html", lojas=lojas)
 
 @app.route("/")
 @app.route("/dashboard")
-@login_required
 def dashboard():
     with SessionLocal() as db:
         ofertas = (
@@ -135,24 +74,37 @@ def dashboard():
 
 @app.route("/publicadas")
 @app.route("/ofertas/publicadas")
-@login_required
 def ofertas_publicadas():
+    from backend.models.models import OfertaPublicada
     with SessionLocal() as db:
-        ofertas = (
-            db.query(Oferta)
+        # Busca os registros de OfertaPublicada que contêm snapshot dos dados
+        ofertas_publicadas = (
+            db.query(OfertaPublicada)
               .options(
-                  joinedload(Oferta.produto).options(selectinload(Produto.tags)),
-                  joinedload(Oferta.loja),
-                  selectinload(Oferta.metricas)
+                  joinedload(OfertaPublicada.oferta).selectinload(Oferta.produto).selectinload(Produto.tags),
+                  joinedload(OfertaPublicada.canal)
               )
-              .filter(Oferta.status == "PUBLICADO")
-              .order_by(Oferta.data_publicacao.desc())
+              .order_by(OfertaPublicada.data_publicacao.desc())
               .all()
         )
-    return render_template("ofertas_publicadas.html", ofertas=ofertas)
+        
+        # Agrupa por oferta_id para mostrar todos os canais
+        from collections import defaultdict
+        canais_por_oferta = defaultdict(list)
+        ofertas_dict = {}
+        for op in ofertas_publicadas:
+            canais_por_oferta[op.oferta_id].append(op.canal_nome or (op.canal.nome_amigavel if op.canal else "—"))
+            if op.oferta_id not in ofertas_dict:
+                ofertas_dict[op.oferta_id] = op
+        
+        # Lista única de ofertas publicadas
+        ofertas_unicas = list(ofertas_dict.values())
+        
+    return render_template("ofertas_publicadas.html", 
+                         ofertas=ofertas_unicas, 
+                         canais_por_oferta=dict(canais_por_oferta))
 
 @app.route("/configuracoes")
-@login_required
 def configuracoes():
     with SessionLocal() as db:
         tags = db.query(Tag).all()
@@ -165,30 +117,9 @@ def configuracoes():
 from backend.routes.api import api_bp
 app.register_blueprint(api_bp, url_prefix="/api")
 
-# Rota para adicionar um usuário admin inicial (apenas para setup)
-@app.route("/setup_admin")
-def setup_admin():
-    admin_username = get_config("ADMIN_USERNAME", "admin")        # :contentReference[oaicite:11]{index=11}
-    admin_email    = get_config("ADMIN_EMAIL", "admin@example.com")
-    admin_password = get_config("ADMIN_PASSWORD", "admin_password")
-
-    with SessionLocal() as db:
-        if not db.query(Usuario).filter_by(username=admin_username).first():
-            hashed_pw = hash_password(admin_password)
-            admin_user = Usuario(
-                username=admin_username,
-                password_hash=hashed_pw,
-                email=admin_email,
-                is_admin=True
-            )
-            db.add(admin_user)
-            db.commit()
-            return "Usuário admin criado com sucesso!", 200
-    return "Usuário admin já existe.", 200
-
 @app.route("/produtos")
-@login_required
 def lista_produtos():
+    from datetime import timedelta
     with SessionLocal() as db:
         produtos = (
             db.query(Produto)
@@ -223,11 +154,36 @@ def lista_produtos():
         for p in produtos:
             p._nome_loja = by_seller.get(getattr(p, "product_id_loja", None)) \
                            or by_alt.get(getattr(p, "product_id_loja_alt", None))
+            
+            # Requirement 6: Marca se produto já foi postado
+            p._foi_postado = any(oferta.status == "PUBLICADO" for oferta in p.ofertas)
+            
+            # Requirement 7: Marca se produto está na fila de aprovação
+            p._na_fila = any(oferta.status == "PENDENTE_APROVACAO" for oferta in p.ofertas)
+            
+            # Requirement 8: Marca se produto é novo ou foi atualizado recentemente (1 dia)
+            agora = datetime.now()
+            p._e_novo = False
+            p._foi_atualizado = False
+            if getattr(p, "data_criacao", None):
+                diferenca_criacao = agora - p.data_criacao
+                if diferenca_criacao <= timedelta(days=1):
+                    p._e_novo = True
+            if getattr(p, "data_atualizacao", None):
+                diferenca_atualizacao = agora - p.data_atualizacao
+                # Só marca como atualizado se não for novo
+                if diferenca_atualizacao <= timedelta(days=1) and not p._e_novo:
+                    p._foi_atualizado = True
+            
+            # Requirement 4: Verifica se loja está ativa
+            loja = None
+            if p.product_id_loja:
+                loja = db.query(LojaConfiavel).filter(LojaConfiavel.id_loja_api == p.product_id_loja).first()
+            p._loja_ativa = loja.ativa if loja else False
 
     return render_template("produtos.html", produtos=produtos)
 
 @app.route("/variaveis")
-@login_required
 def variaveis():
     return render_template("env_vars.html")
 
@@ -236,7 +192,6 @@ from datetime import datetime
 from datetime import timezone, timedelta
 
 @app.route("/logs")
-@login_required
 def view_logs():
     with SessionLocal() as db:
         logs = (
@@ -278,29 +233,8 @@ def view_logs():
 
 
 if __name__ == "__main__":
-    # Garante tabelas e cria admin se necessário
+    # Garante tabelas
     create_db_tables()
-
-    admin_username = get_config("ADMIN_USERNAME", "admin")
-    admin_email = get_config("ADMIN_EMAIL", "admin@example.com")
-    admin_password = get_config("ADMIN_PASSWORD", "admin")
-
-    #admin_username = os.getenv("ADMIN_USERNAME", "admin")
-    #admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
-    #admin_password = os.getenv("ADMIN_PASSWORD", "admin_password")
-
-    with SessionLocal() as db:
-        if not db.query(Usuario).filter_by(username=admin_username).first():
-            hashed_pw = hash_password(admin_password)
-            admin_user = Usuario(
-                username=admin_username,
-                password_hash=hashed_pw,
-                email=admin_email,
-                is_admin=True
-            )
-            db.add(admin_user)
-            db.commit()
-            print(f"Usuário admin inicial '{admin_username}' criado.")
 
     debug_flag = (get_config("FLASK_DEBUG", "True") or "True").lower() == "true"
 
