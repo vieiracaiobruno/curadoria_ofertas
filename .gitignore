@@ -54,4 +54,4 @@ Thumbs.db
 
 # Project specific
 backend/db/curadoria_ofertas.db
-pipeline_results.json
+pipeline_results.jsonconfig.env
