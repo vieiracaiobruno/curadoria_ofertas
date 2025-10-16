@@ -4,7 +4,14 @@ import json
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from backend.models.models import Oferta, CanalTelegram, Produto, LojaConfiavel, MetricaOferta, OfertaPublicada
+from backend.models.models import (
+    Oferta,
+    CanalTelegram,
+    Produto,
+    LojaConfiavel,
+    MetricaOferta,
+    OfertaPublicada,
+)
 from backend.modules.utils.config import get_config
 
 class Publisher:
