@@ -69,6 +69,15 @@
   .btn-view-history {
     cursor: pointer;
   }
+  
+  /* Indicador visual para cards clicáveis (produtos postados) */
+  .card-produto.clickable {
+    cursor: pointer;
+  }
+  
+  .card-produto.clickable:hover .card-flip-front {
+    box-shadow: 0 .5rem 1.5rem rgba(0,0,0,.2);
+  }
 
   /* ====== Layouts ====== */
   #produtos-container.grid-1 { display:block; }
@@ -160,7 +169,7 @@
   {% endif %}
 
   {% for produto in produtos %}
-  <div class="card card-produto mb-4 card-flip-container"
+  <div class="card card-produto mb-4 card-flip-container {% if produto._foi_postado %}clickable{% endif %}"
        id="produto-{{ produto.id }}"
        style="position: relative;"
        data-novo="{{ '1' if produto._e_novo else '0' }}"
@@ -296,12 +305,6 @@
             <button class="btn btn-danger btn-excluir" data-produto-id="{{ produto.id }}">
               <i class="bi bi-trash-fill"></i> Excluir
             </button>
-            
-            {% if produto._foi_postado %}
-            <button class="btn btn-outline-secondary btn-view-history" data-produto-id="{{ produto.id }}" title="Ver histórico de ofertas">
-              <i class="bi bi-clock-history"></i> Histórico
-            </button>
-            {% endif %}
           </div>
 
         </div>
@@ -688,29 +691,24 @@
           data.ofertas.forEach(oferta => {
             html += `
               <div class="oferta-item">
-                <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="mb-2">
                   <strong><i class="bi bi-calendar3"></i> ${oferta.data_publicacao}</strong>
-                  <span class="badge bg-primary">${oferta.canal_nome}</span>
                 </div>
-                <div class="mb-1">
-                  <small class="text-muted">Loja: ${oferta.nome_loja}</small>
-                </div>
-                <div class="d-flex justify-content-between">
+                <div class="d-flex justify-content-between align-items-center">
                   <div>
                     ${oferta.preco_original !== null ? `
                       <small class="text-muted text-decoration-line-through">
-                        R$ ${oferta.preco_original.toFixed(2)}
+                        Preço original: R$ ${oferta.preco_original.toFixed(2)}
                       </small>
                     ` : ''}
                     ${oferta.preco_oferta !== null ? `
-                      <strong class="text-success ms-2">
-                        R$ ${oferta.preco_oferta.toFixed(2)}
-                      </strong>
+                      <div>
+                        <strong class="text-success">
+                          Preço de oferta: R$ ${oferta.preco_oferta.toFixed(2)}
+                        </strong>
+                      </div>
                     ` : ''}
                   </div>
-                  ${oferta.desconto_real !== null ? `
-                    <span class="badge bg-danger">${oferta.desconto_real.toFixed(0)}% OFF</span>
-                  ` : ''}
                 </div>
               </div>
             `;
@@ -732,24 +730,31 @@
       }
     }
 
-    // Evento para virar o card e carregar histórico
-    document.querySelectorAll(".btn-view-history").forEach(btn => {
-      btn.addEventListener("click", async function(e) {
-        e.stopPropagation();
-        const produtoId = this.getAttribute("data-produto-id");
-        const card = document.getElementById("produto-" + produtoId);
-        
-        if (card && !card.classList.contains("flipped")) {
-          card.classList.add("flipped");
-          
-          // Carrega o histórico apenas uma vez
-          const historicoContainer = card.querySelector(".ofertas-historico");
-          if (historicoContainer && !historicoContainer.hasAttribute("data-loaded")) {
-            await loadOfertasHistory(produtoId, historicoContainer);
-            historicoContainer.setAttribute("data-loaded", "true");
+    // Evento para virar o card ao clicar (somente para produtos postados)
+    document.querySelectorAll(".card-produto.clickable").forEach(card => {
+      // Adiciona o listener no card-flip-front para evitar conflitos
+      const frontCard = card.querySelector(".card-flip-front");
+      if (frontCard) {
+        frontCard.addEventListener("click", async function(e) {
+          // Ignora cliques em botões, links e campos de formulário
+          if (e.target.closest("button, a, select, input")) {
+            return;
           }
-        }
-      });
+          
+          const produtoId = card.id.replace("produto-", "");
+          
+          if (!card.classList.contains("flipped")) {
+            card.classList.add("flipped");
+            
+            // Carrega o histórico apenas uma vez
+            const historicoContainer = card.querySelector(".ofertas-historico");
+            if (historicoContainer && !historicoContainer.hasAttribute("data-loaded")) {
+              await loadOfertasHistory(produtoId, historicoContainer);
+              historicoContainer.setAttribute("data-loaded", "true");
+            }
+          }
+        });
+      }
     });
 
     // Evento para voltar o card
