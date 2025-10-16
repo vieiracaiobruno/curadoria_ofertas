@@ -12,9 +12,11 @@ except Exception:
         module = importlib.import_module('db.database')
         Base = getattr(module, 'Base')
     except Exception:
-        module = importlib.import_module('database')
-        Base = getattr(module, 'Base')
-
+        try:
+            module = importlib.import_module('database')
+            Base = getattr(module, 'Base')
+        except Exception as e:
+            raise ImportError("Could not import 'Base' from any known database module paths. Tried '..db.database', 'db.database', and 'database'.") from e
 # Tabelas de ligação N:N
 produto_tags = Table(
     'produto_tags',
