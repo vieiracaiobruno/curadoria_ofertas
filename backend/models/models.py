@@ -6,7 +6,14 @@ from datetime import datetime
 try:
     from ..db.database import Base
 except Exception:
-    from database import Base
+    # Fallback to dynamic import to support running the module in different contexts
+    import importlib
+    try:
+        module = importlib.import_module('db.database')
+        Base = getattr(module, 'Base')
+    except Exception:
+        module = importlib.import_module('database')
+        Base = getattr(module, 'Base')
 
 # Tabelas de ligação N:N
 produto_tags = Table(
