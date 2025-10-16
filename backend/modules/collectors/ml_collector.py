@@ -12,6 +12,13 @@ from bs4 import BeautifulSoup
 import requests
 import html as _html
 from urllib.parse import urlparse, parse_qs, unquote
+
+# substituir função local por import do util
+try:
+    from backend.modules.utils.cookie_utils import update_all_site_cookies
+except Exception:
+    from ..utils.cookie_utils import update_all_site_cookies
+
 # Selenium (para clicar no botão Compartilhar)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -27,59 +34,6 @@ try:
 except Exception:
     from backend.modules.utils.config import get_config
     from backend.modules.utils.selenium_client import SeleniumClient
-
-
-# Lista de sites de coleta para exportar cookies
-COLLECTION_SITES = [
-    "https://www.mercadolivre.com.br"
-]
-
-
-def update_all_site_cookies(user_data_dir: Optional[str] = None, profile_dir: Optional[str] = None) -> Dict[str, dict]:
-    """
-    Função genérica para atualizar cookies de todos os sites de coleta.
-    Abre uma sessão do Chrome com o perfil logado, navega em cada site e exporta os cookies.
-    
-    Args:
-        user_data_dir: Diretório de dados do usuário do Chrome
-        profile_dir: Diretório do perfil do Chrome
-        
-    Returns:
-        Dict com os cookies exportados de cada site: {url: {cookies: [...], localStorage: {...}}}
-    """
-    from backend.modules.utils.selenium_client import SeleniumClient
-    from backend.modules.utils.config import get_config
-    
-    user_data = (get_config("SELENIUM_USER_DATA_DIR", user_data_dir or "") or "").strip()
-    profile = (get_config("SELENIUM_PROFILE_DIR", profile_dir or "") or "").strip()
-    
-    print(f"Abrindo sessão do Chrome com perfil logado para exportar cookies...")
-    selenium_client = SeleniumClient(
-        user_data_dir=user_data,
-        profile_dir=profile,
-        detach=False,
-        log_error=None,
-    )
-    
-    all_cookies = {}
-    try:
-        for site_url in COLLECTION_SITES:
-            print(f"  Exportando cookies de: {site_url}")
-            try:
-                session_state = selenium_client.export_session_state(site_url)
-                all_cookies[site_url] = session_state
-                print(f"    ✓ {len(session_state.get('cookies', []))} cookies exportados")
-            except Exception as e:
-                print(f"    ✗ Erro ao exportar cookies de {site_url}: {e}")
-                all_cookies[site_url] = {"cookies": [], "localStorage": {}}
-    finally:
-        try:
-            selenium_client.close()
-        except Exception:
-            pass
-    
-    return all_cookies
-
 
 class MLCollector(BaseCollector):
     """

@@ -5,8 +5,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 import random # Para simular vendas
 
-from ..models.models import Oferta, MetricaOferta
-from ..db.database import DATABASE_URL, Base
+from backend.models.models import Oferta, MetricaOferta
+from backend.db.database import DATABASE_URL, Base
 from backend.modules.utils.config import get_config
 
 # Configuração do banco de dados

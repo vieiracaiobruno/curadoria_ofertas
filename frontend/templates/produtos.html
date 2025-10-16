@@ -81,6 +81,14 @@
     <button id="layout-1" class="btn btn-outline-secondary">1 por linha</button>
     <button id="layout-5" class="btn btn-outline-secondary">5 por linha</button>
   </div>
+
+  <!-- FILTROS: Novo | Atualizado | Postado | Na fila -->
+  <div class="btn-group btn-group-sm" role="group" aria-label="Filtros" id="filtros-group">
+    <button class="btn btn-outline-secondary filtro-btn" data-filter="novo">Novo</button>
+    <button class="btn btn-outline-secondary filtro-btn" data-filter="atualizado">Atualizado</button>
+    <button class="btn btn-outline-secondary filtro-btn" data-filter="postado">Postado</button>
+    <button class="btn btn-outline-secondary filtro-btn" data-filter="na_fila">Na fila</button>
+  </div>
 </div>
 
 <div id="produtos-container">
@@ -91,7 +99,13 @@
   {% endif %}
 
   {% for produto in produtos %}
-  <div class="card card-produto mb-4" id="produto-{{ produto.id }}" style="position: relative;">
+  <div class="card card-produto mb-4"
+       id="produto-{{ produto.id }}"
+       style="position: relative;"
+       data-novo="{{ '1' if produto._e_novo else '0' }}"
+       data-atualizado="{{ '1' if produto._foi_atualizado else '0' }}"
+       data-postado="{{ '1' if produto._foi_postado else '0' }}"
+       data-na-fila="{{ '1' if produto._na_fila else '0' }}">
     <!-- Marcações no topo do card -->
     {% if produto._foi_postado %}
     <span class="badge bg-success" style="position: absolute; top: 10px; right: 10px; z-index: 10;" title="Produto já foi postado">
@@ -111,7 +125,7 @@
     </span>
     {% elif produto._foi_atualizado %}
     <span class="badge bg-secondary" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10;" title="Produto atualizado (últimas 24h)">
-      <i class="bi bi-arrow-repeat"></i> Atualizado
+      <i class="bi bi-arrow-repeat"></i> Atualiz
     </span>
     {% endif %}
     
@@ -259,6 +273,65 @@
       applyMode("grid-5");
       localStorage.setItem("produtos.layout", "grid-5");
     });
+
+    // filtros
+    const filtrosGroup = document.getElementById("filtros-group");
+    const activeFilters = new Set();
+
+    function toggleFiltroButton(btn) {
+      const f = btn.dataset.filter;
+      if (activeFilters.has(f)) {
+        activeFilters.delete(f);
+        btn.classList.remove("btn-secondary");
+        btn.classList.add("btn-outline-secondary");
+      } else {
+        activeFilters.add(f);
+        btn.classList.add("btn-secondary");
+        btn.classList.remove("btn-outline-secondary");
+      }
+      applyFilters();
+    }
+
+    function cardMatchesFilters(cardEl) {
+      if (!cardEl) return false;
+      // if no active filters, show all
+      if (activeFilters.size === 0) return true;
+
+      // for a card to be shown, it must satisfy all selected filters (AND behaviour).
+      for (const f of activeFilters) {
+        const val = cardEl.dataset[f.replace("-", "_")] || cardEl.dataset[f];
+        // normalize keys: mapping filter names to data attributes
+        let has = false;
+        if (f === "novo") has = cardEl.dataset.novo === "1";
+        else if (f === "atualizado") has = cardEl.dataset.atualizado === "1";
+        else if (f === "postado") has = cardEl.dataset.postado === "1";
+        else if (f === "na_fila") has = cardEl.dataset.naFila === "1" || cardEl.dataset.na_fila === "1";
+        if (!has) return false;
+      }
+      return true;
+    }
+
+    function applyFilters() {
+      const cards = document.querySelectorAll("#produtos-container .card-produto");
+      let visibleCount = 0;
+      cards.forEach(card => {
+        if (cardMatchesFilters(card)) {
+          card.style.display = "";
+          visibleCount++;
+        } else {
+          card.style.display = "none";
+        }
+      });
+      document.getElementById("contador-produtos").textContent = visibleCount;
+    }
+
+    // ligar eventos aos botões de filtro
+    document.querySelectorAll(".filtro-btn").forEach(btn => {
+      btn.addEventListener("click", () => toggleFiltroButton(btn));
+    });
+
+    // quando a página carrega, manter contador correto (filtrado inicial = none)
+    updateCounter();
 
     function updateCounter() {
       const n = document.querySelectorAll("#produtos-container .card-produto").length;
