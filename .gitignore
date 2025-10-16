@@ -55,4 +55,3 @@ Thumbs.db
 # Project specific
 backend/db/curadoria_ofertas.db
 pipeline_results.json
-scripts/backups_schema/

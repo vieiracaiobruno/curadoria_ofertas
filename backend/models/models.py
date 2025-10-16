@@ -6,8 +6,17 @@ from datetime import datetime
 try:
     from ..db.database import Base
 except Exception:
-    from database import Base
-
+    # Fallback to dynamic import to support running the module in different contexts
+    import importlib
+    try:
+        module = importlib.import_module('db.database')
+        Base = getattr(module, 'Base')
+    except Exception:
+        try:
+            module = importlib.import_module('database')
+            Base = getattr(module, 'Base')
+        except Exception as e:
+            raise ImportError("Could not import 'Base' from any known database module paths. Tried '..db.database', 'db.database', and 'database'.") from e
 # Tabelas de ligação N:N
 produto_tags = Table(
     'produto_tags',
@@ -24,15 +33,6 @@ canal_tags = Table(
 )
 
 # --------- Modelos ---------
-class Usuario(Base):
-    __tablename__ = "usuarios"
-    __table_args__ = {'extend_existing': True}
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    email = Column(String, unique=True, nullable=False)
-    is_admin = Column(Boolean, default=False)
-
 class LojaConfiavel(Base):
     __tablename__ = "lojas_confiaveis"
     __table_args__ = {'extend_existing': True}
@@ -86,6 +86,8 @@ class Produto(Base):
     data_validade = Column(DateTime, nullable=True)
     desconto_real = Column(Float, nullable=True)
     ganho_real = Column(Float, nullable=True)  # NOVO (percentual de ganho futuro)
+    data_criacao = Column(DateTime, default=datetime.now, nullable=True)  # Para rastrear novos produtos
+    data_atualizacao = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=True)  # Para rastrear atualizações
 
     tags = relationship("Tag", secondary="produto_tags", back_populates="produtos")
     historico_precos = relationship("HistoricoPreco", back_populates="produto")
@@ -142,6 +144,20 @@ class OfertaPublicada(Base):
     canal_id = Column(Integer, ForeignKey('canais_telegram.id'), nullable=False)
     data_publicacao = Column(DateTime, default=datetime.now, nullable=False)
     mensagem_id_telegram = Column(String, nullable=True)
+    
+    # Snapshot dos dados do produto no momento da publicação
+    nome_produto = Column(String, nullable=True)
+    preco_original = Column(Float, nullable=True)
+    preco_oferta = Column(Float, nullable=True)
+    desconto_real = Column(Float, nullable=True)
+    url_afiliado_curta = Column(String, nullable=True)
+    imagem_url = Column(String, nullable=True)
+    
+    # Snapshot dos dados da loja
+    nome_loja = Column(String, nullable=True)
+    
+    # Nome do canal (para referência rápida)
+    canal_nome = Column(String, nullable=True)
 
     oferta = relationship("Oferta")
     canal = relationship("CanalTelegram", back_populates="ofertas_publicadas")

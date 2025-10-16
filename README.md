@@ -1,196 +1,572 @@
 # Sistema de Curadoria de Ofertas
 
-Um sistema automatizado para coleta, validação e publicação de ofertas em canais do Telegram.
+Um sistema automatizado completo para coleta, validação e publicação de ofertas do Mercado Livre em canais do Telegram, com painel web de gerenciamento.
 
-## Funcionalidades
+## 🚀 Funcionalidades Principais
 
-- **Coleta Automatizada**: Raspagem de ofertas de lojas confiáveis (Amazon, Mercado Livre)
-- **Validação Inteligente**: Sistema de aprovação/rejeição baseado em critérios configuráveis
-- **Publicação Automática**: Envio de ofertas aprovadas para canais do Telegram
-- **Painel de Controle**: Interface web para gerenciamento de ofertas e configurações
-- **Análise de Métricas**: Acompanhamento de cliques e vendas
+- **Coleta Automatizada de Ofertas**
+  - 🌐 Modo HTTP direto (rápido e leve, sem dependências de navegador)
+  - 🎯 Modo Selenium (completo, com suporte a JavaScript)
+  - 🔄 Coleta configurável por páginas e delays
+  - 🧵 Enriquecimento paralelo com múltiplos workers
+  
+- **Processamento Inteligente**
+  - 📊 Detecção automática de descontos e ofertas
+  - 🏷️ Sistema de tags para categorização
+  - 🔍 Validação baseada em critérios configuráveis
+  - 📦 Persistência em banco de dados SQLite
+  
+- **Publicação Automatizada**
+  - 📱 Envio para múltiplos canais do Telegram
+  - 🎨 Formatação automática de mensagens em MarkdownV2
+  - ⏰ Agendamento de publicações
+  - 📈 Rastreamento de métricas por canal
+  
+- **Painel Web de Controle**
+  - 🖥️ Interface Bootstrap responsiva
+  - ✅ Aprovação/rejeição manual de ofertas
+  - ⚙️ Gerenciamento de lojas, tags e canais
+  - 📊 Visualização de produtos e histórico de publicações
+  - 📝 Consulta de logs de coleta
 
-## Estrutura do Projeto
+## 📁 Estrutura do Projeto
 
 ```
 curadoria_ofertas/
-├── app.py                     # Aplicação principal Flask
-├── requirements.txt           # Dependências Python
-├── config.env                 # Configurações (criar baseado em config.env.example)
-├── logs/                      # Arquivos de log
-├── backend/
+├── app.py                              # Aplicação principal Flask
+├── run_pipeline.py                     # Pipeline completo de curadoria
+├── requirements.txt                    # Dependências Python
+├── config.env                          # Configurações (criar manualmente)
+├── setup_cron.sh                       # Script para configurar cron job
+├── copilot-instructions.md            # Instruções para desenvolvimento
+│
+├── backend/                            # Código backend
 │   ├── db/
-│   │   └── database.py        # Configuração do banco de dados
+│   │   ├── database.py                # Configuração do banco de dados
+│   │   └── curadoria_ofertas.db       # Banco SQLite (criado automaticamente)
+│   │
 │   ├── models/
-│   │   └── models.py          # Modelos SQLAlchemy
+│   │   └── models.py                  # Modelos SQLAlchemy (Produto, Oferta, etc.)
+│   │
 │   ├── modules/
-│   │   ├── collector.py       # Coleta de ofertas
-│   │   ├── validator.py       # Validação de ofertas
-│   │   ├── publisher.py       # Publicação no Telegram
-│   │   └── metrics_analyzer.py # Análise de métricas
+│   │   ├── collectors/
+│   │   │   ├── base.py                # Classe base para coletores
+│   │   │   └── ml_collector.py        # Coletor do Mercado Livre
+│   │   │
+│   │   ├── services/
+│   │   │   └── offer_processor.py     # Processamento de ofertas
+│   │   │
+│   │   ├── utils/
+│   │   │   ├── config.py              # Gerenciamento de configurações
+│   │   │   └── selenium_client.py     # Cliente Selenium reutilizável
+│   │   │
+│   │   ├── validator.py               # Validação de ofertas
+│   │   ├── publisher.py               # Publicação no Telegram
+│   │   └── metrics_analyzer.py        # Análise de métricas
+│   │
 │   ├── routes/
-│   │   └── api.py            # Rotas da API
-│   └── utils/
-│       └── auth.py           # Autenticação
-├── frontend/
-│   ├── templates/            # Templates HTML
-│   └── static/              # Arquivos estáticos
-└── run_pipeline*.py         # Scripts de execução do pipeline
+│   │   └── api.py                     # Rotas da API REST
+│   │
+│   └── http/
+│       └── browser_client.py          # Cliente HTTP para scraping
+│
+├── frontend/                           # Interface web
+│   ├── templates/                     # Templates Jinja2
+│   │   ├── fila_aprovacao.html       # Dashboard de aprovação
+│   │   ├── ofertas_publicadas.html   # Histórico de publicações
+│   │   ├── produtos.html             # Lista de produtos
+│   │   ├── configuracoes.html        # Gerenciamento de tags/canais
+│   │   ├── lojas_confiaveis.html     # Gerenciamento de lojas
+│   │   ├── logs_coleta.html          # Visualização de logs
+│   │   └── env_vars.html             # Variáveis de ambiente
+│   │
+│   └── static/                        # Arquivos estáticos (CSS, JS)
+│
+└── scripts/                            # Scripts utilitários
+    ├── iniciar_scrapper_ml.py         # Script de coleta standalone
+    └── iniciar_tabela_com_var.py      # Script de inicialização de dados
 ```
 
-## Instalação
+## 🛠️ Instalação
+
+### Pré-requisitos
+- Python 3.8 ou superior
+- pip (gerenciador de pacotes Python)
+- Chrome/Chromium instalado (opcional, apenas se usar modo Selenium)
+
+### Passos de Instalação
 
 1. **Clone o repositório**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/vieiracaiobruno/curadoria_ofertas.git
    cd curadoria_ofertas
    ```
 
-2. **Instale as dependências**
+2. **Crie um ambiente virtual (recomendado)**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Linux/Mac
+   # ou
+   venv\Scripts\activate     # Windows
+   ```
+
+3. **Instale as dependências**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure as variáveis de ambiente**
-   ```bash
-   cp config.env.example config.env
-   # Edite config.env com suas configurações
+4. **Configure as variáveis de ambiente**
+   
+   Crie um arquivo `config.env` na raiz do projeto com as seguintes configurações:
+   
+   ```env
+   # Database Configuration
+   DATABASE_URL=sqlite:///./backend/db/curadoria_ofertas.db
+   
+   # Flask Configuration
+   SECRET_KEY=sua-chave-secreta-aqui
+   FLASK_ENV=development
+   FLASK_DEBUG=True
+   PORT=5000
+   
+   # Admin Configuration (opcional)
+   ADMIN_USERNAME=admin
+   ADMIN_PASSWORD=sua-senha-aqui
+   ADMIN_EMAIL=admin@example.com
+   
+   # Telegram Configuration
+   TELEGRAM_BOT_TOKEN=seu-token-do-bot
+   TELEGRAM_CHANNEL_ID=@seu_canal
+   
+   # Mercado Livre Collector Configuration
+   USE_SELENIUM=false          # true = Selenium, false = HTTP (mais rápido)
+   ML_MAX_PAGES=3              # Número de páginas para coletar
+   ML_REQUEST_DELAY_SEC=2      # Delay entre requisições (segundos)
+   ML_ENRICH_WORKERS=1         # Workers paralelos para enriquecimento
+   
+   # Logging Configuration (opcional)
+   LOG_FILE=./logs/pipeline.log
+   RESULTS_FILE=./logs/pipeline_results.json
    ```
 
-4. **Configure o banco de dados**
+5. **Inicialize o banco de dados**
+   
+   O banco de dados será criado automaticamente na primeira execução, mas você pode forçar a criação:
    ```bash
    python -c "from backend.db.database import create_db_tables; create_db_tables()"
    ```
 
-5. **Execute a aplicação**
+6. **Execute a aplicação**
    ```bash
    python app.py
    ```
 
-6. **Acesse o painel**
+7. **Acesse o painel web**
    - URL: http://localhost:5000
-   - Usuário padrão: admin
-   - Senha: (definida em config.env)
+   - Configure lojas, tags e canais antes de executar o pipeline
 
-## Configuração
+## ⚙️ Configuração
 
-### Variáveis de Ambiente (config.env)
+### Modos de Coleta: Selenium vs HTTP
 
-```env
-# Database Configuration
-DATABASE_URL=sqlite:///./backend/db/curadoria_ofertas.db
+O sistema suporta dois modos de coleta do Mercado Livre, configurável via `USE_SELENIUM`:
 
-# Flask Configuration
-SECRET_KEY=your-secret-key-change-this-in-production
-FLASK_ENV=development
-FLASK_DEBUG=True
+#### 🌐 Modo HTTP (Recomendado - `USE_SELENIUM=false`)
+- ✅ **5x mais rápido** que Selenium
+- ✅ **10x menos memória**
+- ✅ Não requer Chrome/navegador instalado
+- ✅ Mais difícil de ser detectado como bot
+- ✅ Ideal para servidores e ambientes de produção
+- ⚠️ Não extrai alguns campos avançados (ganho_real, url_afiliado_curta)
 
-# Admin Configuration
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=change-this-password
-ADMIN_EMAIL=admin@example.com
+#### 🎯 Modo Selenium (`USE_SELENIUM=true`)
+- ✅ Extrai **todos os campos** incluindo ganho_real e url_afiliado_curta
+- ✅ Suporta JavaScript e conteúdo dinâmico
+- ✅ Simula comportamento de navegador real
+- ⚠️ Mais lento e consome mais recursos
+- ⚠️ Requer Chrome/Chromium instalado
+- ⚠️ Pode ser detectado como bot em algumas situações
 
-# Logging Configuration
-LOG_FILE=./logs/pipeline.log
-RESULTS_FILE=./logs/pipeline_results.json
-
-# Telegram Configuration
-TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-TELEGRAM_CHANNEL_ID=your-channel-id
-```
+**Recomendação**: Use modo HTTP para coletas frequentes e produção. Use Selenium apenas se precisar dos campos extras.
 
 ### Configuração do Telegram
 
-1. Crie um bot no Telegram usando @BotFather
-2. Obtenha o token do bot
-3. Adicione o bot ao canal onde deseja publicar as ofertas
-4. Configure as variáveis `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHANNEL_ID`
+Para habilitar a publicação automática no Telegram:
 
-## Uso
+1. **Crie um bot**
+   - Abra o Telegram e busque por `@BotFather`
+   - Envie `/newbot` e siga as instruções
+   - Copie o token fornecido
 
-### Execução Manual do Pipeline
+2. **Configure o canal**
+   - Crie um canal no Telegram ou use um existente
+   - Adicione seu bot como administrador do canal
+   - Obtenha o ID do canal (formato: `@nome_do_canal` ou `-100XXXXXXXXX`)
+
+3. **Configure no sistema**
+   - Adicione o token e ID do canal no `config.env`
+   - Cadastre o canal no painel web (Configurações > Canais)
+   - Associe tags ao canal para filtragem automática
+
+### Configuração de Lojas Confiáveis
+
+1. Acesse o painel web em **Lojas Confiáveis**
+2. Adicione novas lojas informando:
+   - Nome da loja
+   - Plataforma (Mercado Livre)
+   - ID da loja na API (seller_id)
+   - Pontuação de confiança (1-5)
+   - Status (ativa/inativa)
+
+### Sistema de Tags
+
+Tags são usadas para categorizar produtos e direcionar ofertas para canais específicos:
+
+1. Acesse **Configurações** no painel web
+2. Adicione tags relevantes (ex: "eletrônicos", "casa", "games")
+3. Associe tags aos canais do Telegram
+4. O sistema detecta automaticamente tags no nome dos produtos
+
+## 🚀 Uso
+
+### Painel Web
+
+O painel web oferece interface completa para gerenciamento:
 
 ```bash
-# Pipeline completo
-python run_pipeline.py
-
-# Pipeline simplificado (para testes)
-python run_pipeline_simple.py
+python app.py
 ```
 
-### Execução Automatizada
+Acesse http://localhost:5000 e navegue pelas seções:
 
-Configure um cron job para execução automática:
+- **Dashboard**: Fila de aprovação de ofertas pendentes
+- **Publicadas**: Histórico de ofertas publicadas
+- **Produtos**: Lista completa de produtos coletados
+- **Lojas Confiáveis**: Gerenciar lojas para coleta
+- **Configurações**: Gerenciar tags e canais do Telegram
+- **Logs**: Visualizar logs de coleta e erros
+- **Variáveis**: Consultar variáveis de ambiente
+
+### Execução do Pipeline
+
+#### Manual (Linha de Comando)
+
+Execute o pipeline completo de curadoria:
+
+```bash
+python run_pipeline.py
+```
+
+O pipeline executa as seguintes etapas:
+1. **Coleta**: Busca ofertas do Mercado Livre
+2. **Processamento**: Estrutura e persiste dados no banco
+3. **Validação**: Aplica regras de validação configuráveis
+4. **Publicação**: Envia ofertas aprovadas para Telegram
+5. **Métricas**: Analisa performance das publicações
+
+#### Automatizada (Cron Job)
+
+Para execução periódica automática, use o script `setup_cron.sh`:
+
+```bash
+# Torne o script executável
+chmod +x setup_cron.sh
+
+# Execute o script (irá configurar cron job)
+./setup_cron.sh
+```
+
+Ou configure manualmente:
 
 ```bash
 # Edite o crontab
 crontab -e
 
 # Adicione a linha (executa a cada 2 horas)
-0 */2 * * * cd /path/to/curadoria_ofertas && python run_pipeline.py
+0 */2 * * * cd /caminho/para/curadoria_ofertas && /caminho/para/venv/bin/python run_pipeline.py >> logs/cron.log 2>&1
 ```
 
-## API Endpoints
+### Scripts Auxiliares
 
-### Ofertas
-- `GET /api/canais_destino?tags=tag1,tag2` - Busca canais por tags
-- `POST /api/ofertas/{id}/aprovar` - Aprova uma oferta
-- `POST /api/ofertas/{id}/rejeitar` - Rejeita uma oferta
-- `POST /api/ofertas/{id}/agendar` - Agenda uma oferta
+```bash
+# Coleta standalone do Mercado Livre
+python scripts/iniciar_scrapper_ml.py
 
-### Configurações
-- `POST /api/lojas` - Adiciona loja confiável
-- `PUT /api/lojas/{id}` - Atualiza loja
-- `DELETE /api/lojas/{id}` - Remove loja
-- `POST /api/tags` - Adiciona tag
-- `DELETE /api/tags/{id}` - Remove tag
-- `POST /api/canais` - Adiciona canal Telegram
-- `PUT /api/canais/{id}` - Atualiza canal
-- `DELETE /api/canais/{id}` - Remove canal
+# Inicialização de dados de teste
+python scripts/iniciar_tabela_com_var.py
+```
 
-## Desenvolvimento
+## 🔌 API REST
 
-### Estrutura de Dados
+O sistema expõe uma API REST para integração e automação:
 
-O sistema utiliza as seguintes entidades principais:
+### Endpoints de Ofertas
 
-- **Usuario**: Usuários do sistema
-- **LojaConfiavel**: Lojas para coleta de ofertas
-- **Produto**: Produtos encontrados
-- **Oferta**: Ofertas coletadas
-- **Tag**: Categorização de produtos
-- **CanalTelegram**: Canais de publicação
-- **MetricaOferta**: Métricas de performance
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/canais_destino?tags=tag1,tag2` | Busca canais por tags |
+| `POST` | `/api/ofertas/{id}/aprovar` | Aprova uma oferta pendente |
+| `POST` | `/api/ofertas/{id}/rejeitar` | Rejeita uma oferta |
+| `POST` | `/api/ofertas/{id}/agendar` | Agenda publicação de oferta |
 
-### Adicionando Novas Lojas
+### Endpoints de Lojas
 
-1. Implemente o método de raspagem em `collector.py`
-2. Adicione a loja via painel web ou API
-3. Configure as tags apropriadas
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `POST` | `/api/lojas` | Adiciona nova loja confiável |
+| `PUT` | `/api/lojas/{id}` | Atualiza dados de uma loja |
+| `DELETE` | `/api/lojas/{id}` | Remove uma loja |
+| `PATCH` | `/api/lojas/{id}/toggle` | Ativa/desativa uma loja |
 
-## Troubleshooting
+### Endpoints de Tags
 
-### Problemas Comuns
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `POST` | `/api/tags` | Adiciona nova tag |
+| `DELETE` | `/api/tags/{id}` | Remove uma tag |
 
-1. **Erro de importação**: Verifique se está no diretório correto
-2. **Erro de banco**: Execute `create_db_tables()` novamente
-3. **Erro de Telegram**: Verifique token e permissões do bot
-4. **Erro de permissão**: Verifique se o diretório logs/ existe
+### Endpoints de Canais
 
-### Logs
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `POST` | `/api/canais` | Adiciona novo canal Telegram |
+| `PUT` | `/api/canais/{id}` | Atualiza dados de um canal |
+| `DELETE` | `/api/canais/{id}` | Remove um canal |
 
-Os logs são salvos em:
-- `./logs/pipeline.log` - Logs do pipeline
-- `./logs/pipeline_results.json` - Resultados das execuções
+### Exemplos de Uso
 
-## Contribuição
+```bash
+# Aprovar uma oferta
+curl -X POST http://localhost:5000/api/ofertas/123/aprovar
 
-1. Fork o projeto
-2. Crie uma branch para sua feature
-3. Commit suas mudanças
-4. Push para a branch
-5. Abra um Pull Request
+# Adicionar uma tag
+curl -X POST http://localhost:5000/api/tags \
+  -H "Content-Type: application/json" \
+  -d '{"nome_tag": "eletrônicos"}'
 
-## Licença
+# Buscar canais por tags
+curl http://localhost:5000/api/canais_destino?tags=eletrônicos,promoção
+```
 
-Este projeto está sob a licença MIT.
+## 💾 Modelo de Dados
+
+O sistema utiliza SQLAlchemy com as seguintes entidades principais:
+
+### Entidades Core
+
+- **`Produto`**: Produtos coletados com informações base
+  - Campos: id, id_product, nome_produto, url_base, imagem_url, preco_original, preco_oferta
+  - Relacionamentos: tags (N:N), ofertas (1:N), historico_precos (1:N)
+
+- **`Oferta`**: Instâncias de ofertas de produtos
+  - Campos: id, produto_id, loja_id, desconto_percentual, status, data_coleta
+  - Status possíveis: PENDENTE_APROVACAO, APROVADO, REJEITADO, PUBLICADO
+  - Relacionamentos: produto (N:1), loja (N:1)
+
+- **`LojaConfiavel`**: Lojas cadastradas para coleta
+  - Campos: id, nome_loja, plataforma, id_loja_api, pontuacao_confianca, ativa
+  - Relacionamentos: ofertas (1:N), historico_precos (1:N)
+
+- **`Tag`**: Tags para categorização
+  - Campos: id, nome_tag
+  - Relacionamentos: produtos (N:N), canais (N:N)
+
+- **`CanalTelegram`**: Canais de publicação
+  - Campos: id, id_canal_api, nome_amigavel, ativo, inscritos
+  - Relacionamentos: tags (N:N), ofertas_publicadas (1:N)
+
+### Entidades Auxiliares
+
+- **`OfertaPublicada`**: Registro de publicações realizadas
+- **`MetricaOferta`**: Métricas de cliques e conversões
+- **`HistoricoPreco`**: Histórico de variações de preço
+- **`LogColeta`**: Logs de execução do pipeline
+
+## 🔧 Desenvolvimento
+
+### Ambiente de Desenvolvimento
+
+```bash
+# Ativar ambiente virtual
+source venv/bin/activate
+
+# Instalar dependências de desenvolvimento
+pip install -r requirements.txt
+
+# Configurar variáveis para desenvolvimento
+export FLASK_ENV=development
+export FLASK_DEBUG=True
+```
+
+### Estrutura de Módulos
+
+- **Collectors** (`backend/modules/collectors/`): Implementam coleta de dados
+  - `BaseCollector`: Classe abstrata base
+  - `MLCollector`: Implementação para Mercado Livre
+
+- **Services** (`backend/modules/services/`): Lógica de negócio
+  - `OfferProcessor`: Processa e persiste ofertas
+
+- **Utils** (`backend/modules/utils/`): Utilitários
+  - `config.py`: Gerenciamento de configurações
+  - `selenium_client.py`: Cliente Selenium reutilizável
+
+### Adicionando Novos Coletores
+
+Para adicionar suporte a uma nova plataforma:
+
+1. Crie uma classe herdando de `BaseCollector` em `backend/modules/collectors/`
+2. Implemente os métodos abstratos:
+   - `collect()`: Lógica de coleta
+   - `parse_item()`: Parse de dados
+   - `enrich_item()`: Enriquecimento de dados
+3. Registre a loja no banco via painel web
+4. Configure tags apropriadas para categorização
+
+### Padrões de Código
+
+- Use type hints para melhor documentação
+- Docstrings em português para funções públicas
+- Logs claros em etapas críticas
+- Tratamento robusto de exceções
+- Testes unitários para lógica complexa
+
+## 🐛 Troubleshooting
+
+### Problemas Comuns e Soluções
+
+#### Erro: ModuleNotFoundError ou ImportError
+```bash
+# Certifique-se de estar no diretório correto
+cd curadoria_ofertas
+
+# E que o ambiente virtual está ativado
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+
+# Reinstale as dependências se necessário
+pip install -r requirements.txt
+```
+
+#### Erro: Banco de dados não encontrado
+```bash
+# Recrie as tabelas do banco
+python -c "from backend.db.database import create_db_tables; create_db_tables()"
+```
+
+#### Erro: Telegram bot não consegue publicar
+1. Verifique se o token está correto no `config.env`
+2. Confirme que o bot foi adicionado ao canal como **administrador**
+3. Verifique o ID do canal (formato: `@nome_canal` ou `-100XXXXXXXXX`)
+4. Teste o bot enviando `/start` diretamente
+
+#### Erro: Permission denied ao criar logs
+```bash
+# Crie o diretório de logs manualmente
+mkdir -p logs
+chmod 755 logs
+```
+
+#### Problema: Coleta muito lenta
+- Use modo HTTP: defina `USE_SELENIUM=false` no `config.env`
+- Reduza o número de páginas: `ML_MAX_PAGES=2`
+- Diminua workers paralelos: `ML_ENRICH_WORKERS=1`
+
+#### Problema: Chrome não instalado
+```bash
+# Solução 1: Use modo HTTP (recomendado)
+# No config.env: USE_SELENIUM=false
+
+# Solução 2: Instale o Chrome/Chromium
+# Ubuntu/Debian:
+sudo apt-get install chromium-browser
+
+# Fedora:
+sudo dnf install chromium
+```
+
+#### Problema: Ofertas não aparecem no dashboard
+1. Verifique se o pipeline foi executado: `python run_pipeline.py`
+2. Consulte os logs: `/logs` no painel web ou `tail -f logs/pipeline.log`
+3. Verifique se há lojas cadastradas e ativas no painel
+
+### Logs e Monitoramento
+
+#### Localização dos Logs
+
+- **Pipeline**: `./logs/pipeline.log` - Logs detalhados de execução
+- **Resultados**: `./logs/pipeline_results.json` - Métricas de cada execução
+- **Cron**: `./logs/cron.log` - Saída do cron job (se configurado)
+
+#### Visualização de Logs
+
+```bash
+# Ver logs em tempo real
+tail -f logs/pipeline.log
+
+# Ver últimas 100 linhas
+tail -n 100 logs/pipeline.log
+
+# Buscar erros específicos
+grep ERROR logs/pipeline.log
+```
+
+#### Logs no Painel Web
+
+Acesse http://localhost:5000/logs para visualizar:
+- Histórico de coletas
+- Erros e warnings
+- Timestamps convertidos para fuso horário local
+
+## 📊 Tecnologias Utilizadas
+
+- **Backend**: Python 3.8+, Flask 2.3
+- **Banco de Dados**: SQLite com SQLAlchemy 2.0
+- **Web Scraping**: BeautifulSoup 4, Selenium 4, httpx
+- **Frontend**: Jinja2, Bootstrap 5
+- **Integração**: Telegram Bot API
+- **Configuração**: python-dotenv
+
+## 🤝 Contribuição
+
+Contribuições são bem-vindas! Para contribuir:
+
+1. **Fork** o projeto
+2. Crie uma **branch** para sua feature (`git checkout -b feature/MinhaFeature`)
+3. **Commit** suas mudanças (`git commit -m 'Adiciona MinhaFeature'`)
+4. **Push** para a branch (`git push origin feature/MinhaFeature`)
+5. Abra um **Pull Request**
+
+### Diretrizes de Contribuição
+
+- Siga os padrões de código definidos em `copilot-instructions.md`
+- Adicione testes para novas funcionalidades
+- Atualize a documentação conforme necessário
+- Use mensagens de commit descritivas
+- Mantenha compatibilidade com Python 3.8+
+
+## 📝 Roadmap
+
+- [ ] Suporte a mais plataformas (Amazon, AliExpress)
+- [ ] Dashboard de métricas avançadas
+- [ ] Sistema de notificações por email
+- [ ] API GraphQL para consultas complexas
+- [ ] Containerização com Docker
+- [ ] Testes automatizados (pytest)
+- [ ] CI/CD com GitHub Actions
+- [ ] Suporte a múltiplos idiomas
+
+## 📄 Licença
+
+Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
+
+## 👥 Autores
+
+- **Caio Bruno Vieira** - [@vieiracaiobruno](https://github.com/vieiracaiobruno)
+
+## 🙏 Agradecimentos
+
+- Comunidade Python Brasil
+- Documentação do Flask e SQLAlchemy
+- Telegram Bot API
+- Mercado Livre (dados públicos)
