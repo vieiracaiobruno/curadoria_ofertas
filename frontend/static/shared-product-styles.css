@@ -93,6 +93,7 @@
 #ofertas-container.grid-5 .text-muted.small,
 #ofertas-container.grid-5 .fw-bold.mb-1,
 #ofertas-container.grid-5 .canais-destino-text,
+#ofertas-container.grid-5 .card-text small,
 #produtos-container.grid-5 .text-muted.small,
 #produtos-container.grid-5 .card-text small {
   font-size: .78rem !important;
