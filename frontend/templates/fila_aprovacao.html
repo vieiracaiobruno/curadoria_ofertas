@@ -114,13 +114,13 @@
     <button id="layout-5" class="btn btn-outline-secondary">5 por linha</button>
   </div>
 
-  <!-- Search by product name -->
-  <div class="d-flex align-items-center flex-grow-1 mx-3">
-    <input id="search-input" type="search" class="form-control form-control-sm" 
-           placeholder="Pesquisar por nome do produto..." style="min-width:300px;">
-  </div>
+  <!-- Busca por nome (centralizada com botão Buscar) -->
+  <form id="search-form" class="mx-3 d-flex" role="search">
+    <input id="search-q" name="q" class="form-control form-control-sm"
+           type="search" placeholder="Pesquisar por nome do produto..." style="min-width:300px;" autocomplete="off">
+    <button id="search-btn" class="btn btn-sm btn-primary ms-2" type="submit">Buscar</button>
+  </form>
 
-  <!-- Sort buttons -->
   <div class="btn-group btn-group-sm" role="group" aria-label="Ordenação">
     <button id="sort-desconto" class="btn btn-outline-secondary" title="Ordenar por desconto">
       <i class="bi bi-sort-down"></i> Desconto
@@ -141,7 +141,7 @@
   {% for oferta in ofertas %}
   {% set p = oferta.produto %}
   <div class="card card-oferta mb-4" id="oferta-{{ oferta.id }}">
-    <div class="row g-0">
+    <div class="row g-0" id="oferta-{{ oferta.id }}">
       <div class="col-md-2 d-flex align-items-center justify-content-center p-3">
         <img src="{{ p.imagem_url or url_for('static', filename='placeholder.png') }}"
              class="img-fluid rounded-start product-image"
@@ -272,29 +272,32 @@ document.addEventListener("DOMContentLoaded", function () {
   b1.addEventListener("click", ()=>{ applyFilaMode("grid-1"); localStorage.setItem("fila.layout","grid-1"); });
   b5.addEventListener("click", ()=>{ applyFilaMode("grid-5"); localStorage.setItem("fila.layout","grid-5"); });
 
+  // Lê tags do container: usa .tag-entry (onde fica o dataset)
   function readTags(container){
-    return Array.from(container.querySelectorAll(".tag"))
-      .map(el => (el.dataset.tagName || "").trim())
+    return Array.from(container.querySelectorAll(".tag-entry"))
+      .map(entry => entry.dataset.tagName || entry.querySelector(".tag")?.textContent.replace("#","").trim() || "")
       .filter(Boolean);
   }
 
+  // Renderiza tags garantindo dataset no wrapper (.tag-entry) e também no .tag
   function renderTags(container, tags){
     container.innerHTML = "";
     tags.forEach(t=>{
       const entry = document.createElement("span");
       entry.className = "d-inline-flex align-items-center me-1 tag-entry";
       entry.dataset.tagName = t;
-      
+
       const badge = document.createElement("span");
       badge.className = "badge bg-primary p-2 me-1 tag";
+      badge.dataset.tagName = t; // redundante para seletor que leia do .tag
       badge.innerHTML = `#${t}`;
-      
+
       const btn = document.createElement("button");
       btn.className = "btn btn-sm btn-delete-tag remove-tag";
       btn.type = "button";
       btn.title = "Remover tag";
       btn.innerHTML = `<i class="bi bi-x-circle-fill" aria-hidden="true"></i><span class="visually-hidden">Remover tag</span>`;
-      
+
       badge.appendChild(btn);
       entry.appendChild(badge);
       container.appendChild(entry);
@@ -307,11 +310,13 @@ document.addEventListener("DOMContentLoaded", function () {
     const el = card.querySelector(".canais-destino-text");
     el.innerHTML = `<i class="bi bi-telegram text-primary"></i> Carregando...`;
     try{
-      const r = await fetch(`/api/canais_destino?tags=${encodeURIComponent(tags.join(","))}`);
+      const qs = tags.length ? `?tags=${encodeURIComponent(tags.join(","))}` : "";
+      const r = await fetch(`/api/canais_destino${qs}`);
       const data = await r.json();
+      const canais = Array.isArray(data?.canais) ? data.canais : [];
       if(data.status==="success"){
-        if(data.canais.length){
-          el.innerHTML = `<i class="bi bi-telegram text-primary"></i> ${data.canais.map(c=>c.nome_amigavel).join(", ")}`;
+        if(canais.length){
+          el.innerHTML = `<i class="bi bi-telegram text-primary"></i> ${canais.map(c=>c.nome_amigavel).join(", ")}`;
         } else {
           el.innerHTML = `<i class="bi bi-telegram text-warning"></i> Nenhum canal encontrado.`;
         }
@@ -320,13 +325,13 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }catch(e){
       el.innerHTML = `<i class="bi bi-exclamation-triangle text-danger"></i> Erro de rede.`;
+      console.error("refreshCanais error:", e);
     }
   }
 
-  // Inicialização: dedup preservando case original (prefilter + produto)
+  // Inicialização (dedup) permanece, mas renderiza com datasets corretos
   document.querySelectorAll(".card-oferta").forEach(card=>{
     const container = card.querySelector(".tags-combined-container");
-    // Captura ordenada - get from tag-entry elements
     const raw = Array.from(container.querySelectorAll(".tag-entry")).map(entry => {
       return entry.dataset.tagName || entry.querySelector(".tag")?.textContent.replace("#","").trim() || "";
     });
@@ -343,37 +348,28 @@ document.addEventListener("DOMContentLoaded", function () {
     refreshCanais(card);
   });
 
-  // Remover tag (permite remover todas)
+  // Remover tag: agir sobre .tag-entry e usar dataset correto
   document.addEventListener("click", async e=>{
     const btn = e.target.closest(".remove-tag");
     if(!btn) return;
-    const container = btn.closest(".tags-combined-container");
     const card = btn.closest(".card-oferta");
-    const tagEl = btn.closest(".tag");
-    const tagName = tagEl.dataset.tagName;
-    const ofertaId = container.dataset.ofertaId;
-    
-    // Pegar produto_id do card (se disponível via data attribute)
-    const produtoIdMatch = card.id.match(/oferta-(\d+)/);
-    if (!produtoIdMatch) {
-      tagEl.remove();
-      refreshCanais(card);
-      return;
-    }
-    
-    // Remove tag do DOM primeiro
-    tagEl.remove();
+    const container = btn.closest(".tags-combined-container");
+    const entry = btn.closest(".tag-entry");
+    const tagName = entry?.dataset.tagName || "";
+    if (!tagName) return;
+
+    // Remove a entry completa (wrapper + badge)
+    entry.remove();
     const remainingTags = readTags(container);
-    
-    // Se ficou sem tags, alertar e remover card da fila
+
+    // Se ficou sem tags, avisar/remover da fila (mantém sua lógica atual)
     if(remainingTags.length === 0){
       if(confirm("Remover a última tag irá retirar este produto da fila de aprovação. Deseja continuar?")){
         card.remove();
-        atualizarContador();
-        alert("Produto removido da fila de aprovação por não ter tags.");
+        atualizarContador?.();
       } else {
-        // Restaura tag se usuário cancelar
-        container.appendChild(tagEl);
+        // Se cancelar, re-adiciona
+        renderTags(container, [tagName]);
       }
     }
     refreshCanais(card);
@@ -402,9 +398,13 @@ document.addEventListener("DOMContentLoaded", function () {
     }).then(r=>r.json());
   }
 
+  // Contador: mostra visíveis de total
   function atualizarContador(){
-    document.getElementById("contador-ofertas").textContent =
-      document.querySelectorAll(".card-oferta").length;
+    const cards = Array.from(document.querySelectorAll(".card-oferta"));
+    const visiveis = cards.filter(c => c.style.display !== "none").length;
+    const total = cards.length;
+    const el = document.getElementById("contador-ofertas");
+    if (el) el.textContent = `${visiveis} de ${total}`;
   }
 
   // Aprovar
@@ -462,20 +462,50 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // ====== Search functionality ======
-  const searchInput = document.getElementById("search-input");
-  searchInput.addEventListener("input", function(){
-    const query = this.value.toLowerCase().trim();
-    document.querySelectorAll(".card-oferta").forEach(card=>{
+  // ====== Search functionality (central + botão Buscar, como produtos.html) ======
+  const searchForm = document.getElementById("search-form");
+  const searchInput = document.getElementById("search-q");
+  const searchBtn = document.getElementById("search-btn");
+
+  function aplicarBusca() {
+    const query = (searchInput?.value || "").toLowerCase().trim();
+    document.querySelectorAll(".card-oferta").forEach(card => {
       const title = card.querySelector(".card-title")?.textContent.toLowerCase() || "";
-      if(title.includes(query)){
-        card.style.display = "";
-      } else {
-        card.style.display = "none";
-      }
+      card.style.display = title.includes(query) ? "" : "none";
     });
     atualizarContador();
-  });
+  }
+
+  // ler parâmetro ?q da URL e aplicar ao carregar
+  (function initBuscaFromURL(){
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q") || "";
+    if (searchInput) searchInput.value = q;
+    if (q) aplicarBusca();
+    else atualizarContador();
+  })();
+
+  if (searchForm) {
+    searchForm.addEventListener("submit", function(e){
+      e.preventDefault();
+      // atualiza a URL (sem recarregar) com ?q=
+      const url = new URL(window.location.href);
+      const qval = (searchInput.value || "").trim();
+      if (qval) url.searchParams.set("q", qval);
+      else url.searchParams.delete("q");
+      history.replaceState({}, "", url.toString());
+      aplicarBusca();
+    });
+  }
+  if (searchBtn) {
+    searchBtn.addEventListener("click", function(e){
+      // redundante ao submit, garante ação mesmo se type mudar
+      if (searchForm) searchForm.dispatchEvent(new Event("submit", { cancelable: true }));
+    });
+  }
+  if (searchInput) {
+    searchInput.addEventListener("input", aplicarBusca);
+  }
 
   // ====== Sort functionality ======
   let currentSort = { field: null, direction: "desc" };
