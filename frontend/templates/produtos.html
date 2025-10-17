@@ -3,12 +3,8 @@
 {% block title %}Produtos{% endblock %}
 
 {% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='shared-cards.css') }}">
 <style>
-  .card-produto { transition: box-shadow .3s; }
-  .card-produto:hover { box-shadow: 0 .5rem 1rem rgba(0,0,0,.15); }
-  .product-image { max-width:100%; height:auto; max-height:150px; object-fit:contain; }
-  .tag { cursor: default; }
-
   /* ====== Card Flip Animation ====== */
   .card-flip-container {
     perspective: 1000px;
@@ -50,17 +46,17 @@
     overflow-x: auto;
     overflow-y: hidden;
     padding: 0.5rem;
-    max-height: 120px; /* mantém limite vertical */
+    max-height: 120px;
     white-space: nowrap;
     -webkit-overflow-scrolling: touch;
-    font-size: 0.78rem; /* fonte menor */
+    font-size: 0.78rem;
   }
   
   .oferta-item {
     display: inline-flex;
     flex-direction: column;
     justify-content: space-between;
-    min-width: 180px; /* largura mínima de cada bloco de oferta */
+    min-width: 180px;
     max-width: 220px;
     padding: 0.45rem;
     border-radius: 6px;
@@ -68,15 +64,15 @@
     box-shadow: none;
     margin: 0;
     white-space: normal;
-    font-size: 0.78rem; /* mesma fonte reduzida */
+    font-size: 0.78rem;
   }
 
   .oferta-item .mb-2 { margin-bottom: .35rem; }
   .oferta-item .text-muted { font-size: 0.72rem; }
 
   /* adaptar para modo compacto (5 por linha) */
-  #produtos-container.grid-5 .ofertas-historico { max-height: 100px; font-size: 0.75rem; }
-  #produtos-container.grid-5 .oferta-item { min-width: 150px; max-width: 180px; font-size: 0.75rem; }
+  .grid-container.grid-5 .ofertas-historico { max-height: 100px; font-size: 0.75rem; }
+  .grid-container.grid-5 .oferta-item { min-width: 150px; max-width: 180px; font-size: 0.75rem; }
 
   /* ====== Layouts ====== */
   #produtos-container.grid-1 { display:block; }
@@ -112,32 +108,6 @@
 
   @media (max-width: 768px) {
     #produtos-container.grid-5 { grid-template-columns: 1fr; }
-  }
-
-  /* ====== Estilo moderno para o combo "Adicionar tag" ====== */
-  .select-tag.form-select {
-    border-radius: 999px;
-    padding-left: 2.25rem;
-    background-image: none;
-    box-shadow: 0 1px 2px rgba(0,0,0,.06);
-    border-color: #e5e7eb;
-    transition: box-shadow .2s, border-color .2s;
-  }
-  .select-tag.form-select:focus {
-    border-color: #86b7fe;
-    box-shadow: 0 0 0 .15rem rgba(13,110,253,.15);
-  }
-  .select-tag-wrap {
-    position: relative;
-  }
-  .select-tag-wrap .bi-tag {
-    position: absolute;
-    left: .75rem;
-    top: 50%;
-    transform: translateY(-50%);
-    pointer-events: none;
-    opacity: .7;
-    font-size: .9rem;
   }
 </style>
 {% endblock %}
@@ -249,11 +219,13 @@
             </small>
           </p>
 
-          <div class="tags-container mb-2">
+          <div class="tags-container mb-2" data-produto-id="{{ produto.id }}">
             <span class="fw-bold">Tags:</span>
             {% if produto.tags %}
               {% for tag in produto.tags %}
-                <span class="badge bg-primary p-2 me-1 tag">#{{ tag.nome_tag }}</span>
+                <span class="badge bg-primary p-2 me-1 tag" data-tag-name="{{ tag.nome_tag }}">
+                  #{{ tag.nome_tag }} <i class="bi bi-x-circle ms-1 remove-tag" title="Remover"></i>
+                </span>
               {% endfor %}
             {% else %}
               <span class="text-muted">—</span>
@@ -342,6 +314,75 @@
     const container = document.getElementById("produtos-container");
     const btn1 = document.getElementById("layout-1");
     const btn5 = document.getElementById("layout-5");
+
+    // Remove tag functionality
+    document.addEventListener("click", async function(e) {
+      const removeBtn = e.target.closest(".remove-tag");
+      if (!removeBtn) return;
+      
+      const tagEl = removeBtn.closest(".tag");
+      const tagsContainer = removeBtn.closest(".tags-container");
+      const produtoId = tagsContainer.dataset.produtoId;
+      const tagName = tagEl.dataset.tagName;
+      
+      if (!confirm(`Remover a tag "${tagName}"?`)) return;
+      
+      try {
+        const resp = await fetch(`/api/produtos/${produtoId}/tags/${tagName}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" }
+        });
+        
+        const data = await resp.json();
+        
+        if (resp.ok && data.status === "success") {
+          // Remove visually
+          tagEl.remove();
+          
+          // If no more tags, show placeholder
+          if (tagsContainer.querySelectorAll(".tag").length === 0) {
+            const placeholder = document.createElement("span");
+            placeholder.className = "text-muted";
+            placeholder.textContent = "—";
+            tagsContainer.appendChild(placeholder);
+          }
+          
+          // Update the select to add this tag back to available options
+          const card = tagsContainer.closest(".card-produto");
+          const sel = card.querySelector(".sel-tag-existente");
+          if (sel) {
+            const opt = document.createElement("option");
+            opt.value = tagName;
+            opt.textContent = tagName;
+            sel.appendChild(opt);
+          }
+          
+          // Check if product was removed from queue
+          if (data.message && data.message.includes("removido da fila")) {
+            // Remove "Na fila" badge if present
+            const naFilaBadge = card.querySelector(".badge-na-fila");
+            if (naFilaBadge) {
+              naFilaBadge.remove();
+            }
+            
+            // Re-enable the oferta button
+            const ofertaBtn = card.querySelector(".btn-oferta");
+            if (ofertaBtn) {
+              ofertaBtn.disabled = false;
+              ofertaBtn.classList.remove("btn-outline-secondary");
+              ofertaBtn.classList.add("btn-outline-info");
+              ofertaBtn.innerHTML = `<i class="bi bi-send"></i> Oferta`;
+            }
+            
+            alert(data.message);
+          }
+        } else {
+          alert("Erro ao remover tag: " + (data.message || "desconhecido"));
+        }
+      } catch (e) {
+        alert("Erro de rede ao remover tag: " + e);
+      }
+    });
 
     function applyMode(mode) {
       container.classList.remove("grid-1","grid-5");

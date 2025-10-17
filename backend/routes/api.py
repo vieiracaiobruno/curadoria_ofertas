@@ -602,6 +602,61 @@ def api_add_tags_to_product(produto_id):
     finally:
         db.close()
 
+@api_bp.route("/produtos/<int:produto_id>/tags/<string:tag_name>", methods=["DELETE"])
+def api_remove_tag_from_product(produto_id, tag_name):
+    """
+    Remove uma tag específica de um produto.
+    Se o produto ficar sem tags e estiver na fila de aprovação, remove a oferta.
+    """
+    db = SessionLocal()
+    try:
+        produto = db.get(Produto, produto_id)
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+        
+        # Normaliza o nome da tag
+        tag_name_normalized = _normalize_tag_name(tag_name)
+        
+        # Busca a tag
+        tag = db.query(Tag).filter(Tag.nome_tag == tag_name_normalized).first()
+        if not tag:
+            return jsonify({"status": "error", "message": "Tag não encontrada."}), 404
+        
+        # Remove a tag do produto
+        if tag in produto.tags:
+            produto.tags.remove(tag)
+            db.commit()
+        else:
+            return jsonify({"status": "error", "message": "Produto não possui esta tag."}), 404
+        
+        # Verifica se o produto ficou sem tags
+        if len(produto.tags) == 0:
+            # Verifica se há ofertas pendentes de aprovação
+            oferta_pendente = db.query(Oferta).filter(
+                Oferta.produto_id == produto_id,
+                Oferta.status == "PENDENTE_APROVACAO"
+            ).first()
+            
+            if oferta_pendente:
+                # Remove a oferta da fila
+                oferta_pendente.status = "REJEITADO"
+                db.commit()
+                return jsonify({
+                    "status": "success",
+                    "message": "Tag removida. Produto removido da fila de aprovação (sem tags)."
+                }), 200
+        
+        return jsonify({
+            "status": "success",
+            "message": "Tag removida com sucesso."
+        }), 200
+        
+    except Exception as e:
+        db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
+
 # helper reaproveitável
 def _api_reprocess_single_product(produto_id: int):
     from backend.modules.services.offer_processor import OfferProcessor
