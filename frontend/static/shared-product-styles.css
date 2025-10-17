@@ -1,0 +1,158 @@
+/* ====== Shared Product Card Styles ====== */
+/* Este arquivo contém estilos compartilhados entre fila_aprovacao.html e produtos.html */
+
+/* Card base */
+.card-produto, .card-oferta {
+  transition: box-shadow .3s;
+}
+
+.card-produto:hover, .card-oferta:hover {
+  box-shadow: 0 .5rem 1rem rgba(0,0,0,.15);
+}
+
+/* Imagem do produto */
+.product-image {
+  max-width: 100%;
+  height: auto;
+  max-height: 150px;
+  object-fit: contain;
+}
+
+/* Preços e descontos */
+.preco-desconto {
+  font-size: 1.75rem;
+  font-weight: bold;
+  color: #198754;
+}
+
+.preco-original {
+  text-decoration: line-through;
+  color: #6c757d;
+  margin-left: 10px;
+}
+
+/* Tags */
+.tag {
+  cursor: pointer;
+  margin-bottom: 5px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tag .remove-tag {
+  margin-left: 5px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.7);
+}
+
+.tag .remove-tag:hover {
+  color: #dc3545;
+}
+
+/* Layouts de grid */
+#ofertas-container.grid-1,
+#produtos-container.grid-1 {
+  display: block;
+}
+
+#ofertas-container.grid-5,
+#produtos-container.grid-5 {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+#ofertas-container.grid-5 .card-oferta,
+#produtos-container.grid-5 .card-produto {
+  margin-bottom: 0;
+}
+
+/* Compactação visual no modo 5 por linha */
+#ofertas-container.grid-5 .card,
+#produtos-container.grid-5 .card {
+  border-radius: .5rem;
+}
+
+#ofertas-container.grid-5 .card-body,
+#produtos-container.grid-5 .card-body {
+  padding: .55rem .6rem;
+}
+
+#ofertas-container.grid-5 .card-title,
+#produtos-container.grid-5 .card-title {
+  font-size: .95rem;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: .25rem !important;
+}
+
+#ofertas-container.grid-5 .text-muted.small,
+#ofertas-container.grid-5 .fw-bold.mb-1,
+#ofertas-container.grid-5 .canais-destino-text,
+#produtos-container.grid-5 .text-muted.small,
+#produtos-container.grid-5 .card-text small {
+  font-size: .78rem !important;
+}
+
+#ofertas-container.grid-5 .preco-desconto,
+#produtos-container.grid-5 .preco-desconto {
+  font-size: 1.15rem;
+}
+
+#ofertas-container.grid-5 .preco-original,
+#produtos-container.grid-5 .preco-original {
+  margin-left: .5rem;
+  font-size: .8rem;
+}
+
+#ofertas-container.grid-5 .badge,
+#produtos-container.grid-5 .badge {
+  font-size: .65rem;
+  padding: .25rem .35rem;
+}
+
+#ofertas-container.grid-5 .btn,
+#produtos-container.grid-5 .btn {
+  padding: .25rem .4rem;
+  font-size: .75rem;
+}
+
+#ofertas-container.grid-5 .mt-3,
+#produtos-container.grid-5 .mt-3 {
+  margin-top: .5rem !important;
+}
+
+#ofertas-container.grid-5 .product-image,
+#produtos-container.grid-5 .product-image {
+  max-height: 90px;
+}
+
+#ofertas-container.grid-5 .row.g-0,
+#produtos-container.grid-5 .row.g-0 {
+  display: block;
+}
+
+#ofertas-container.grid-5 .row.g-0 > .col-md-2,
+#ofertas-container.grid-5 .row.g-0 > .col-md-10,
+#produtos-container.grid-5 .row.g-0 > .col-md-2,
+#produtos-container.grid-5 .row.g-0 > .col-md-10 {
+  width: 100%;
+  max-width: 100%;
+  flex: 0 0 100%;
+}
+
+#ofertas-container.grid-5 .row.g-0 > .col-md-2,
+#produtos-container.grid-5 .row.g-0 > .col-md-2 {
+  padding: .6rem !important;
+}
+
+@media (max-width: 768px) {
+  #ofertas-container.grid-5,
+  #produtos-container.grid-5 {
+    grid-template-columns: 1fr;
+  }
+}

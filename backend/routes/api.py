@@ -124,6 +124,17 @@ def api_aprovar_oferta(oferta_id):
         if produto is not None and tags_from_frontend is not None:  # permite [] para remover todas
             produto.tags.clear()
             produto.tags.extend(_resolve_tags_by_names(db, tags_from_frontend))
+        
+        # Validar que o produto tem pelo menos uma tag
+        if produto is not None and len(produto.tags) == 0:
+            # Rejeitar a oferta automaticamente
+            oferta.status = "REJEITADO"
+            db.commit()
+            return jsonify({
+                "status": "error", 
+                "message": "Produto não possui tags. A oferta foi rejeitada e removida da fila.",
+                "no_tags": True
+            }), 400
 
         oferta.status = "APROVADO"
         db.commit()
@@ -828,7 +839,8 @@ def api_remove_tag_from_product(produto_id):
     """
     Remove uma tag existente do produto.
     Body: {"tag": "nome_da_tag"}
-    Não permite remover a última tag do produto (retorna 400).
+    Permite remover todas as tags do produto. Se o produto estiver na fila de aprovação
+    e ficar sem tags, a oferta pendente será rejeitada automaticamente.
     """
     db = SessionLocal()
     try:
@@ -847,14 +859,33 @@ def api_remove_tag_from_product(produto_id):
         if not tag_obj or tag_obj not in produto.tags:
             return jsonify({"status": "error", "message": "Tag não encontrada no produto."}), 404
 
-        # Não remover última tag
-        if len(produto.tags) <= 1:
-            return jsonify({"status": "error", "message": "Não é possível remover a última tag do produto."}), 400
-
         produto.tags.remove(tag_obj)
+        
+        # Se o produto ficou sem tags e tem oferta pendente, rejeitar automaticamente
+        removed_from_queue = False
+        if len(produto.tags) == 0:
+            ofertas_pendentes = db.query(Oferta).filter(
+                Oferta.produto_id == produto_id,
+                Oferta.status == "PENDENTE"
+            ).all()
+            for oferta in ofertas_pendentes:
+                oferta.status = "REJEITADO"
+                removed_from_queue = True
+        
         db.commit()
 
-        return jsonify({"status": "success", "message": "Tag removida do produto.", "tag": tag_norm}), 200
+        response = {
+            "status": "success", 
+            "message": "Tag removida do produto.", 
+            "tag": tag_norm,
+            "remaining_tags": len(produto.tags)
+        }
+        
+        if removed_from_queue:
+            response["removed_from_queue"] = True
+            response["message"] = "Tag removida. Produto sem tags foi removido da fila de aprovação."
+        
+        return jsonify(response), 200
     except Exception as e:
         db.rollback()
         return jsonify({"status": "error", "message": str(e)}), 500
