@@ -30,8 +30,14 @@
     width: 100%;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
+    /* By default prevent pointer interaction on both sides; enable only for the visible side */
+    pointer-events: none;
   }
-  
+
+  /* make the visible side interactive */
+  .card-flip-container:not(.flipped) .card-flip-front { pointer-events: auto; z-index:2; }
+  .card-flip-container.flipped .card-flip-back { pointer-events: auto; z-index:2; }
+
   .card-flip-back {
     position: absolute;
     top: 0;
@@ -40,6 +46,9 @@
     background: white;
     border-radius: 0.5rem;
     box-shadow: 0 .125rem .25rem rgba(0,0,0,.075);
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
   }
   
   .ofertas-historico {
@@ -95,6 +104,7 @@
     line-height: 1.2;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     margin-bottom: .25rem !important;
@@ -139,11 +149,72 @@
     opacity: .7;
     font-size: .9rem;
   }
+
+  /* botão de excluir tag dentro do badge (ícone branco) */
+  .tag .btn-delete-tag {
+    background: transparent;
+    border: 0;
+    color: #fff;
+    padding: 0;
+    margin-left: .4rem;
+    font-size: 0.95rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .tag .btn-delete-tag:hover {
+    opacity: 0.9;
+    text-decoration: none;
+  }
+
+  /* garante que badge e botão fiquem alinhados corretamente */
+  .tag-entry .badge { display: inline-flex; align-items: center; gap: .35rem; }
+
+  /* Tags agora têm largura automática: texto + botão (se existir).
+     O botão fica inline dentro da badge para que o tamanho horizontal inclua o ícone. */
+  .tag-entry .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .25rem .6rem !important;    /* força padding uniforme (override p-2) */
+    font-size: .85rem;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    height: 28px;             /* altura consistente */
+    box-sizing: border-box;
+  }
+
+  /* botão de apagar fica inline, sem aumentar a altura do badge */
+  .tag-entry .btn-delete-tag {
+    background: transparent;
+    border: 0;
+    color: #fff;
+    /* reduzir o espaçamento horizontal para ficar mais justo dentro da badge */
+    padding: 0 .08rem;
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 0;
+    cursor: pointer;
+  }
+  /* garantir que o ícone não adicione margem extra */
+  .tag-entry .btn-delete-tag .bi { margin: 0; padding: 0; }
+
+  .tag-entry { display: inline-flex; align-items: center; }
 </style>
 {% endblock %}
 
 {% block content %}
-<h1 class="mb-4">Produtos (<span id="contador-produtos">{{ produtos|length }}</span>)</h1>
+<h1 class="mb-4">Produtos (<span id="contador-produtos">{{ produtos|length }} de {{ total_count }}</span>)</h1>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div class="btn-group btn-group-sm" role="group" aria-label="Layout">
@@ -151,16 +222,34 @@
     <button id="layout-5" class="btn btn-outline-secondary">5 por linha</button>
   </div>
 
+  <!-- busca por nome do produto -->
+  <form id="search-form" class="mx-3 d-flex" method="get" action="{{ url_for('lista_produtos') }}">
+    <input id="search-q" name="q" class="form-control form-control-sm" type="search"
+           placeholder="Pesquisar por nome do produto..." value="{{ q or '' }}" style="min-width:300px;">
+    {# manter filtros na submissão do form #}
+    {% for f in active_filters %}
+      <input type="hidden" name="filter" value="{{ f }}">
+    {% endfor %}
+    <button class="btn btn-sm btn-primary ms-2" type="submit">Buscar</button>
+  </form>
+
   <!-- FILTROS: Novo | Atualizado | Postado | Na fila -->
   <div class="btn-group btn-group-sm" role="group" aria-label="Filtros" id="filtros-group">
-    <button class="btn btn-outline-secondary filtro-btn" data-filter="novo">Novo</button>
-    <button class="btn btn-outline-secondary filtro-btn" data-filter="atualizado">Atualizado</button>
-    <button class="btn btn-outline-secondary filtro-btn" data-filter="postado">Postado</button>
-    <button class="btn btn-outline-secondary filtro-btn" data-filter="na_fila">Na fila</button>
+    <button class="btn filtro-btn {% if 'novo' in active_filters %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+            data-filter="novo">Novo</button>
+    <button class="btn filtro-btn {% if 'atualizado' in active_filters %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+            data-filter="atualizado">Atualizado</button>
+    <button class="btn filtro-btn {% if 'postado' in active_filters %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+            data-filter="postado">Postado</button>
+    <button class="btn filtro-btn {% if 'na_fila' in active_filters %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+            data-filter="na_fila">Na fila</button>
+    <!-- Novo filtro: produtos sem tags -->
+    <button class="btn filtro-btn {% if 'sem_tags' in active_filters %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+            data-filter="sem_tags">Sem tags</button>
   </div>
 </div>
 
-<div id="produtos-container">
+<div id="produtos-container" data-total-count="{{ total_count|default(0) }}">
   {% if not produtos %}
     <div class="alert alert-info" role="alert">
       Nenhum produto cadastrado no momento.
@@ -174,7 +263,8 @@
        data-novo="{{ '1' if produto._e_novo else '0' }}"
        data-atualizado="{{ '1' if produto._foi_atualizado else '0' }}"
        data-postado="{{ '1' if produto._foi_postado else '0' }}"
-       data-na-fila="{{ '1' if produto._na_fila else '0' }}">
+       data-na-fila="{{ '1' if produto._na_fila else '0' }}"
+       data-semtags="{{ '1' if not produto.tags else '0' }}">
     
     <div class="card-flip-inner">
       <!-- FRONT SIDE -->
@@ -239,21 +329,33 @@
               </small>
             {% endif %}
 
-            <small class="d-block text-primary">
+            <!-- <small class="d-block text-primary">
               Ganho real:
               {% if produto.ganho_real is not none %}
                 {{ '%.0f'|format(produto.ganho_real or 0) }}%
               {% else %}
                 não informado
               {% endif %}
-            </small>
+            </small> -->
           </p>
 
           <div class="tags-container mb-2">
             <span class="fw-bold">Tags:</span>
             {% if produto.tags %}
+              {% set tag_count = produto.tags|length %}
               {% for tag in produto.tags %}
-                <span class="badge bg-primary p-2 me-1 tag">#{{ tag.nome_tag }}</span>
+                <span class="d-inline-flex align-items-center me-1 tag-entry" data-tag-name="{{ tag.nome_tag }}">
+                  <span class="badge bg-primary p-2 me-1 tag">
+                    #{{ tag.nome_tag }}
+                    {% if tag_count > 1 %}
+                      <button class="btn btn-sm btn-delete-tag" 
+                              data-produto-id="{{ produto.id }}" data-tag="{{ tag.nome_tag }}" title="Remover tag">
+                        <i class="bi bi-x-circle-fill" aria-hidden="true"></i>
+                        <span class="visually-hidden">Remover tag</span>
+                      </button>
+                    {% endif %}
+                  </span>
+                </span>
               {% endfor %}
             {% else %}
               <span class="text-muted">—</span>
@@ -334,6 +436,39 @@
   {% endfor %}
 </div>
 
+{% if produtos %}
+<!-- paginação (aparece no fim da lista) -->
+<nav aria-label="Paginação produtos" class="mt-3">
+  <ul class="pagination justify-content-center">
+    {% set prev_page = page-1 if page>1 else None %}
+    <li class="page-item {% if not prev_page %}disabled{% endif %}">
+      <a class="page-link"
+         href="{% if prev_page %}{{ url_for('lista_produtos') }}?page={{ prev_page }}{% for f in active_filters %}&filter={{ f }}{% endfor %}{% if q %}&q={{ q|urlencode }}{% endif %}{% else %}#{% endif %}"
+         tabindex="-1">Anterior</a>
+    </li>
+
+    {% for p in range(1, total_pages + 1) %}
+      {% if p == page %}
+        <li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>
+      {% elif p <= 3 or p > total_pages - 3 or (p >= page-1 and p <= page+1) %}
+        <li class="page-item"><a class="page-link"
+          href="{{ url_for('lista_produtos') }}?page={{ p }}{% for f in active_filters %}&filter={{ f }}{% endfor %}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ p }}</a></li>
+      {% elif p == 4 and page > 4 %}
+        <li class="page-item disabled"><span class="page-link">...</span></li>
+      {% elif p == total_pages-3 and page < total_pages-3 %}
+        <li class="page-item disabled"><span class="page-link">...</span></li>
+      {% endif %}
+    {% endfor %}
+
+    {% set next_page = page+1 if page<total_pages else None %}
+    <li class="page-item {% if not next_page %}disabled{% endif %}">
+      <a class="page-link"
+         href="{% if next_page %}{{ url_for('lista_produtos') }}?page={{ next_page }}{% for f in active_filters %}&filter={{ f }}{% endfor %}{% if q %}&q={{ q|urlencode }}{% endif %}{% else %}#{% endif %}">Próxima</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+
 {% endblock %}
 
 {% block scripts_extra %}
@@ -342,6 +477,10 @@
     const container = document.getElementById("produtos-container");
     const btn1 = document.getElementById("layout-1");
     const btn5 = document.getElementById("layout-5");
+
+    // total vindo do servidor (usado para mostrar "x de total")
+    // o valor vem do atributo data-total-count do elemento #produtos-container
+    let TOTAL_COUNT = Number(container?.dataset?.totalCount) || 0;
 
     function applyMode(mode) {
       container.classList.remove("grid-1","grid-5");
@@ -372,51 +511,73 @@
     const filtrosGroup = document.getElementById("filtros-group");
     const activeFilters = new Set();
 
+    // Persistir filtros ativos entre páginas usando localStorage
+    const FILTERS_STORAGE_KEY = "produtos.active_filters";
+    function saveActiveFilters() {
+      localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(Array.from(activeFilters)));
+    }
+    function restoreActiveFilters() {
+      try {
+        const raw = localStorage.getItem(FILTERS_STORAGE_KEY);
+        if (!raw) return;
+        const arr = JSON.parse(raw);
+        if (!Array.isArray(arr)) return;
+        arr.forEach(f => {
+          const btn = document.querySelector(`.filtro-btn[data-filter="${f}"]`);
+          if (btn && !activeFilters.has(f)) {
+            activeFilters.add(f);
+            btn.classList.add("btn-secondary");
+            btn.classList.remove("btn-outline-secondary");
+          }
+        });
+        applyFilters();
+      } catch (e) {
+        console.debug("Não foi possível restaurar filtros:", e);
+      }
+    }
+
+    // Ao clicar em filtro, atualiza a querystring e recarrega a página (servidor fará o filtro)
+    function getCurrentFiltersFromButtons() {
+      const arr = [];
+      document.querySelectorAll(".filtro-btn").forEach(btn => {
+        if (btn.classList.contains("btn-secondary")) arr.push(btn.dataset.filter);
+      });
+      return arr;
+    }
+
+    function buildUrlWithFilters(page = 1, filters = []) {
+      const base = "{{ url_for('lista_produtos') }}";
+      const qval = encodeURIComponent((document.getElementById("search-q")?.value || "").trim());
+      let qs = `?page=${page}`;
+      filters.forEach(f => qs += `&filter=${encodeURIComponent(f)}`);
+      if (qval) qs += `&q=${qval}`;
+      return base + qs;
+    }
+
+    // Ao submeter o form de busca via Enter mantemos paginação/filtros
+    const searchForm = document.getElementById("search-form");
+    if (searchForm) {
+      searchForm.addEventListener("submit", function (e) {
+        // default submit is fine (form includes filter hidden inputs)
+        // but ensure page resets to 1 (we already have action without page)
+      });
+    }
+
     function toggleFiltroButton(btn) {
+      // toggle visual
       const f = btn.dataset.filter;
-      if (activeFilters.has(f)) {
-        activeFilters.delete(f);
+      if (btn.classList.contains("btn-secondary")) {
         btn.classList.remove("btn-secondary");
         btn.classList.add("btn-outline-secondary");
       } else {
-        activeFilters.add(f);
         btn.classList.add("btn-secondary");
         btn.classList.remove("btn-outline-secondary");
       }
-      applyFilters();
-    }
 
-    function cardMatchesFilters(cardEl) {
-      if (!cardEl) return false;
-      // if no active filters, show all
-      if (activeFilters.size === 0) return true;
-
-      // for a card to be shown, it must satisfy all selected filters (AND behaviour).
-      for (const f of activeFilters) {
-        const val = cardEl.dataset[f.replace("-", "_")] || cardEl.dataset[f];
-        // normalize keys: mapping filter names to data attributes
-        let has = false;
-        if (f === "novo") has = cardEl.dataset.novo === "1";
-        else if (f === "atualizado") has = cardEl.dataset.atualizado === "1";
-        else if (f === "postado") has = cardEl.dataset.postado === "1";
-        else if (f === "na_fila") has = cardEl.dataset.naFila === "1" || cardEl.dataset.na_fila === "1";
-        if (!has) return false;
-      }
-      return true;
-    }
-
-    function applyFilters() {
-      const cards = document.querySelectorAll("#produtos-container .card-produto");
-      let visibleCount = 0;
-      cards.forEach(card => {
-        if (cardMatchesFilters(card)) {
-          card.style.display = "";
-          visibleCount++;
-        } else {
-          card.style.display = "none";
-        }
-      });
-      document.getElementById("contador-produtos").textContent = visibleCount;
+      // build new url with selected filters (reset to page 1) and reload
+      const filters = getCurrentFiltersFromButtons();
+      const url = buildUrlWithFilters(1, filters);
+      window.location.href = url;
     }
 
     // ligar eventos aos botões de filtro
@@ -424,27 +585,16 @@
       btn.addEventListener("click", () => toggleFiltroButton(btn));
     });
 
-    // quando a página carrega, manter contador correto (filtrado inicial = none)
-    updateCounter();
-
+    // atualizar contador considerando filtros ativos -> mostra "visíveis de TOTAL_COUNT"
     function updateCounter() {
-      const n = document.querySelectorAll("#produtos-container .card-produto").length;
-      document.getElementById("contador-produtos").textContent = n;
+      const cards = Array.from(document.querySelectorAll("#produtos-container .card-produto")).filter(c => c.style.display !== "none");
+      const visibleCount = cards.length;
+      const el = document.getElementById("contador-produtos");
+      if (el) el.textContent = `${visibleCount} de ${TOTAL_COUNT}`;
     }
 
-    function addNaFilaBadge(cardEl) {
-      if (!cardEl) return;
-      if (cardEl.querySelector(".badge-na-fila")) return;
-      const badge = document.createElement("span");
-      badge.className = "badge bg-warning text-dark badge-na-fila";
-      badge.style.position = "absolute";
-      badge.style.top = "10px";
-      badge.style.left = "10px";
-      badge.style.zIndex = "10";
-      badge.title = "Aguardando aprovação";
-      badge.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
-      cardEl.appendChild(badge);
-    }
+    // quando a página carrega, manter contador correto
+    updateCounter();
 
     document.querySelectorAll(".btn-oferta").forEach(btn => {
       btn.addEventListener("click", async function () {
@@ -498,6 +648,8 @@
           if (data.status === "success") {
             const card = document.getElementById("produto-" + id);
             if (card) card.remove();
+            // decrementar total global vindo do servidor e atualizar contador exibido
+            TOTAL_COUNT = Math.max(0, TOTAL_COUNT - 1);
             updateCounter();
           } else {
             alert("Erro ao excluir: " + (data.message || "desconhecido"));
@@ -599,64 +751,128 @@
       let data = null;
       try { data = await resp.json(); } catch (_) { /* noop */ }
 
-      if (resp.ok && data && data.status === "success") {
-        const reprocMsg = data?.message || "Tag adicionada e produto reprocessado.";
-        alert(reprocMsg);
+      if (!(resp.ok && data && data.status === "success")) {
+        alert(`Erro ao adicionar tag: ${data?.message || "falha"}`);
+        return;
+      }
 
-        // Atualiza visualmente o card: adiciona o badge da nova tag
-        const card = document.getElementById("produto-" + produtoId);
-        if (card) {
-          const tagsDiv = card.querySelector(".tags-container");
-          if (tagsDiv) {
-            let badge = document.createElement("span");
-            badge.className = "badge bg-primary p-2 me-1 tag";
-            badge.textContent = "#" + tagName;
-            let dash = tagsDiv.querySelector(".text-muted");
-            if (dash) dash.remove();
-            tagsDiv.appendChild(badge);
-          }
-          const sel = card.querySelector(".sel-tag-existente");
-          if (sel) {
-            const opt = sel.querySelector(`option[value="${tagName}"]`);
-            if (opt) opt.remove();
-            sel.value = "";
+      alert(data?.message || "Tag adicionada e produto reprocessado.");
+
+      // Atualiza visualmente o card: reconstrói a lista de tags para manter
+      // consistência (mesmo tamanho, botão de remover quando > 1 tags, etc.)
+      const card = document.getElementById("produto-" + produtoId);
+      if (!card) return;
+
+      const tagsDiv = card.querySelector(".tags-container");
+      if (!tagsDiv) return;
+
+      // coleta tags já existentes no DOM (antes de atualizar) e adiciona a nova
+      const existentes = Array.from(card.querySelectorAll(".tag-entry .badge"))
+        .map(b => b.textContent.replace("#","").trim())
+        .filter(Boolean);
+
+      if (!existentes.includes(tagName)) existentes.push(tagName);
+      const tagCount = existentes.length;
+
+      // reconstrói DOM das tags (garante que todas as tags tenham mesmo estilo e
+      // que botão de remover exista apenas quando tagCount > 1)
+      tagsDiv.innerHTML = '';
+      const title = document.createElement("span");
+      title.className = "fw-bold";
+      title.textContent = "Tags:";
+      tagsDiv.appendChild(title);
+
+      if (existentes.length === 0) {
+        const dash = document.createElement("span");
+        dash.className = "text-muted";
+        dash.textContent = "—";
+        tagsDiv.appendChild(dash);
+      } else {
+        existentes.forEach(t => {
+          const entry = document.createElement("span");
+          entry.className = "d-inline-flex align-items-center me-1 tag-entry";
+          entry.dataset.tagName = t;
+
+          const badge = document.createElement("span");
+          badge.className = "badge bg-primary p-2 me-1 tag";
+          badge.textContent = `#${t}`;
+
+          // se houver mais de uma tag, adiciona botão de remover dentro da badge
+          if (tagCount > 1) {
+            const btn = document.createElement("button");
+            btn.className = "btn btn-sm btn-delete-tag";
+            btn.type = "button";
+            btn.setAttribute("data-produto-id", produtoId);
+            btn.setAttribute("data-tag", t);
+            btn.title = "Remover tag";
+            btn.innerHTML = `<i class="bi bi-x-circle-fill" aria-hidden="true"></i><span class="visually-hidden">Remover tag</span>`;
+            badge.appendChild(btn);
           }
 
-          // Agora tentamos criar a oferta explicitamente.
-          // Somente se a criação retornar sucesso mostramos "Na fila" e desabilitamos o botão Oferta.
-          try {
-            const resp2 = await fetch(`/api/produtos/${produtoId}/criar_oferta`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" }
-            });
-            let data2 = null;
-            try { data2 = await resp2.json(); } catch (_) { data2 = null; }
+          entry.appendChild(badge);
+          tagsDiv.appendChild(entry);
+        });
+      }
 
-            if (resp2.ok && data2 && data2.status === "success") {
-              // oferta realmente criada -> marcar Na fila e desabilitar botão Oferta
-              addNaFilaBadge(card);
-              const ofertaBtn = card.querySelector(".btn-oferta");
-              if (ofertaBtn) {
-                ofertaBtn.classList.remove("btn-outline-info");
-                ofertaBtn.classList.add("btn-outline-secondary");
-                ofertaBtn.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
-                ofertaBtn.disabled = true;
-              }
-            } else {
-              // Não criou oferta: não mostrar badge "Na fila".
-              // Opcional: informar o motivo ao usuário (se houver)
-              if (data2 && data2.message) {
-                console.info("Oferta não criada:", data2.message);
-              } else {
-                console.info("Oferta não criada (sem mensagem).");
-              }
-            }
-          } catch (e) {
-            console.error("Erro ao tentar criar oferta após adicionar tag:", e);
-          }
+      // atualiza select de tags disponíveis no card (remove a tag adicionada)
+      const sel = card.querySelector(".sel-tag-existente");
+      if (sel && Array.isArray(window.allTags)) {
+        const existentesLower = existentes.map(x => x.toLowerCase());
+        const disponiveis = window.allTags.filter(t => !existentesLower.includes(t.toLowerCase()));
+        sel.innerHTML = `<option value="">Adicionar tag...</option>` +
+                        disponiveis.map(t => `<option value="${t}">${t}</option>`).join("");
+        sel.value = "";
+      }
+
+      // atualiza atributo semtags e rebind dos botões de remover
+      card.dataset.semtags = (tagCount === 0) ? "1" : "0";
+      // reaplica handlers de delete apenas no card (bindDeleteButtons já evita duplo bind)
+      if (typeof bindDeleteButtons === "function") bindDeleteButtons(card);
+
+      // Mantém comportamento existente de tentar marcar "Na fila" se backend informou
+      let created = false;
+      try {
+        const reproc = data.reprocess || data;
+        if (reproc && (reproc.status === "success" ||
+            (typeof reproc.outcome === "string" && /oferta|fila|criad|created|aprov/i.test(reproc.outcome)))) {
+          created = true;
+        }
+      } catch (e) { created = false; }
+
+      if (created) {
+        addNaFilaBadge(card);
+        const ofertaBtn = card.querySelector(".btn-oferta");
+        if (ofertaBtn) {
+          ofertaBtn.classList.remove("btn-outline-info");
+          ofertaBtn.classList.add("btn-outline-secondary");
+          ofertaBtn.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
+          ofertaBtn.disabled = true;
         }
       } else {
-        alert(`Erro ao adicionar tag: ${data?.message || "falha"}`);
+        // tentar criar oferta explicitamente (opcional) - mantém o comportamento anterior
+        try {
+          const resp2 = await fetch(`/api/produtos/${produtoId}/criar_oferta`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+          });
+          let data2 = null;
+          try { data2 = await resp2.json(); } catch (_) { data2 = null; }
+          const created2 = resp2.ok && data2 && (data2.status === "success" ||
+            (data2.reprocess && data2.reprocess.status === "success") ||
+            (data2.reprocess && typeof data2.reprocess.outcome === "string" && /oferta|fila|criad|created|aprov/i.test(data2.reprocess.outcome)));
+          if (created2) {
+            addNaFilaBadge(card);
+            const ofertaBtn = card.querySelector(".btn-oferta");
+            if (ofertaBtn) {
+              ofertaBtn.classList.remove("btn-outline-info");
+              ofertaBtn.classList.add("btn-outline-secondary");
+              ofertaBtn.innerHTML = `<i class="bi bi-clock"></i> Na fila`;
+              ofertaBtn.disabled = true;
+            }
+          }
+        } catch (e) {
+          console.error("Erro ao tentar criar oferta após adicionar tag:", e);
+        }
       }
     }
 
@@ -728,26 +944,42 @@
 
     // Evento para virar o card ao clicar (somente para produtos postados)
     document.querySelectorAll(".card-produto.clickable").forEach(card => {
-      // Adiciona o listener no card-flip-front para evitar conflitos
       const frontCard = card.querySelector(".card-flip-front");
+      const backCard = card.querySelector(".card-flip-back");
       if (frontCard) {
         frontCard.addEventListener("click", async function(e) {
-          // Ignora cliques em botões, links e campos de formulário
-          if (e.target.closest("button, a, select, input")) {
-            return;
-          }
-          
+          if (e.target.closest("button, a, select, input")) return;
+
           const produtoId = card.id.replace("produto-", "");
-          
+          const historicoContainer = card.querySelector(".ofertas-historico");
+
           if (!card.classList.contains("flipped")) {
+            // flip to back
             card.classList.add("flipped");
-            
-            // Carrega o histórico apenas uma vez
-            const historicoContainer = card.querySelector(".ofertas-historico");
+            // disable front interactive elements
+            disableInteractive(frontCard);
+            // enable back interactive elements
+            enableInteractive(backCard);
+
+            // load history once, but always handle errors and ensure spinner replaced
             if (historicoContainer && !historicoContainer.hasAttribute("data-loaded")) {
-              await loadOfertasHistory(produtoId, historicoContainer);
-              historicoContainer.setAttribute("data-loaded", "true");
+              try {
+                await loadOfertasHistory(produtoId, historicoContainer);
+              } catch (err) {
+                console.error("Erro durante loadOfertasHistory:", err);
+                historicoContainer.innerHTML = `
+                  <div class="alert alert-danger" role="alert">
+                    <i class="bi bi-exclamation-triangle"></i> Erro ao carregar histórico.
+                  </div>`;
+              } finally {
+                historicoContainer.setAttribute("data-loaded", "true");
+              }
             }
+          } else {
+            // flip back to front
+            card.classList.remove("flipped");
+            enableInteractive(frontCard);
+            disableInteractive(backCard);
           }
         });
       }
@@ -756,12 +988,146 @@
     // Permitir voltar ao produto clicando no lado de trás do card (exceto em controles)
     document.querySelectorAll(".card-flip-back").forEach(back => {
       back.addEventListener("click", function(e) {
-        // não voltar se o clique for em botões/links/inputs
         if (e.target.closest("button, a, select, input")) return;
         const card = this.closest(".card-flip-container");
-        if (card) card.classList.remove("flipped");
+        if (card) {
+          card.classList.remove("flipped");
+          const frontCard = card.querySelector(".card-flip-front");
+          const backCard = card.querySelector(".card-flip-back");
+          enableInteractive(frontCard);
+          disableInteractive(backCard);
+        }
       });
     });
+
+    // Initialize accessibility state: front interactive, back not
+    document.querySelectorAll(".card-produto").forEach(card => {
+      const frontCard = card.querySelector(".card-flip-front");
+      const backCard = card.querySelector(".card-flip-back");
+      if (frontCard) enableInteractive(frontCard);
+      if (backCard) disableInteractive(backCard);
+    });
+
+    // ===== helpers to disable/enable interactive elements (was missing => caused JS error) =====
+    function disableInteractive(el) {
+      if (!el) return;
+      el.setAttribute("aria-hidden", "true");
+      const focusables = el.querySelectorAll('a, button, input, select, textarea, [tabindex]');
+      focusables.forEach(f => {
+        if (f.hasAttribute('tabindex')) f.dataset._prevTab = f.getAttribute('tabindex');
+        f.setAttribute('tabindex', '-1');
+        if (f.tagName === 'BUTTON' || f.tagName === 'INPUT' || f.tagName === 'SELECT' || f.tagName === 'TEXTAREA') {
+          f.dataset._prevDisabled = f.disabled ? '1' : '0';
+          f.disabled = true;
+        }
+      });
+    }
+    function enableInteractive(el) {
+      if (!el) return;
+      el.removeAttribute("aria-hidden");
+      const focusables = el.querySelectorAll('a, button, input, select, textarea, [tabindex]');
+      focusables.forEach(f => {
+        if (f.dataset && f.dataset._prevTab !== undefined) {
+          f.setAttribute('tabindex', f.dataset._prevTab);
+          delete f.dataset._prevTab;
+        } else {
+          f.removeAttribute('tabindex');
+        }
+        if (f.dataset && f.dataset._prevDisabled !== undefined) {
+          f.disabled = f.dataset._prevDisabled === '1';
+          delete f.dataset._prevDisabled;
+        }
+      });
+    }
+
+    // Handler para remoção de tag do produto
+    async function removeTagProduto(produtoId, tagName, btnEl) {
+      if (!confirm(`Remover a tag "${tagName}" deste produto?`)) return;
+      try {
+        btnEl.disabled = true;
+        const resp = await fetch(`/api/produtos/${produtoId}/tags`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tag: tagName })
+        });
+        const data = await resp.json();
+        if (resp.ok && data && data.status === "success") {
+          // Atualiza UI: removes badge + botão
+          const card = document.getElementById("produto-" + produtoId);
+          if (!card) return;
+
+          // Remove a tag entry do DOM
+          const entry = card.querySelector(`.tag-entry[data-tag-name="${tagName}"]`);
+          if (entry) entry.remove();
+
+          // Atualiza o select de tags disponível do card (recria options com base em allTags)
+          const sel = card.querySelector(".sel-tag-existente");
+          if (sel) {
+            // recolher tags atuais no card
+            const existentes = Array.from(card.querySelectorAll(".tag-entry .tag"))
+                                    .map(b => b.textContent.replace("#","").trim().toLowerCase());
+            const disponiveis = allTags.filter(t => !existentes.includes(t.toLowerCase()));
+            sel.innerHTML = `<option value="">Adicionar tag...</option>` +
+                            disponiveis.map(t => `<option value="${t}">${t}</option>`).join("");
+          }
+
+          // Se após remoção ficou apenas 1 tag, remover botões de delete restantes
+          const remainingEntries = card.querySelectorAll(".tag-entry");
+          if (remainingEntries.length <= 1) {
+            remainingEntries.forEach(en => {
+              const del = en.querySelector(".btn-delete-tag");
+              if (del) del.remove();
+            });
+          }
+
+          // Atualiza atributo semtags
+          card.dataset.semtags = (remainingEntries.length === 0) ? "1" : "0";
+
+        } else {
+          alert("Falha ao remover tag: " + (data?.message || resp.statusText || "erro desconhecido"));
+          btnEl.disabled = false;
+        }
+      } catch (e) {
+        console.error("Erro ao remover tag:", e);
+        alert("Erro na requisição: " + e);
+        btnEl.disabled = false;
+      }
+    }
+
+    // liga eventos nos botões de delete existentes (inclui os que podem aparecer depois)
+    function bindDeleteButtons(scope=document) {
+      scope.querySelectorAll(".btn-delete-tag").forEach(btn => {
+        if (btn._deleteBound) return;
+        btn._deleteBound = true;
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          const produtoId = this.getAttribute("data-produto-id");
+          const tagName = this.getAttribute("data-tag");
+          removeTagProduto(produtoId, tagName, this);
+        });
+      });
+    }
+
+    // chama após montar a página e também após atualizar selects/DOM
+    bindDeleteButtons();
+
+    // Quando uma tag é adicionada, atualizar também os botões de delete (o código de addTagProduto já atualiza o DOM)
+    const originalAddTagProduto = window.addTagProduto;
+    if (typeof originalAddTagProduto === "function") {
+      window.addTagProduto = async function(produtoId, tagName) {
+        // chama original
+        await originalAddTagProduto(produtoId, tagName);
+        // rebind delete buttons no card atualizado
+        const card = document.getElementById("produto-" + produtoId);
+        if (card) bindDeleteButtons(card);
+      };
+    }
+
+    // Se tags são carregadas/atualizadas dinamicamente (fetch de /api/tags já preenche allTags),
+    // garantimos que binds sejam reaplicados caso DOM mude.
+    // Por exemplo, ao criar/destruir badges chamamos bindDeleteButtons(card) localmente.
+
+    // ...restante do existing script...
   });
 </script>
 {% endblock %}

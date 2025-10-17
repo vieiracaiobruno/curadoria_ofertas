@@ -14,7 +14,8 @@ from sqlalchemy.orm import joinedload, selectinload
 import unicodedata, re
 
 from backend.modules.utils.config import get_config
-from sqlalchemy import or_
+from sqlalchemy import or_, func
+from datetime import timedelta
 
 # Garantir as tabelas uma ÚNICA vez, usando o bootstrap centralizado do database.py
 create_db_tables()
@@ -119,19 +120,74 @@ app.register_blueprint(api_bp, url_prefix="/api")
 
 @app.route("/produtos")
 def lista_produtos():
-    from datetime import timedelta
+    # paginação
+    try:
+        page = int(request.args.get("page", "1"))
+        if page < 1:
+            page = 1
+    except Exception:
+        page = 1
+    PER_PAGE = 100
+
+    # filtros vindos da querystring: ?filter=novo&filter=postado ...
+    active_filters = request.args.getlist("filter")
+    # pesquisa por texto (?q=...)
+    q = (request.args.get("q") or "").strip()
+
     with SessionLocal() as db:
+        agora = datetime.now()
+
+        # base query
+        query = db.query(Produto)
+
+        # aplicar filtro de busca por nome (no banco)
+        if q:
+            # usa ilike para busca case-insensitive simples
+            query = query.filter(Produto.nome_produto.ilike(f"%{q}%"))
+
+        # aplicar filtros no banco
+        if "postado" in active_filters:
+            query = query.filter(Produto.ofertas.any(Oferta.status == "PUBLICADO"))
+        if "na_fila" in active_filters:
+            query = query.filter(Produto.ofertas.any(Oferta.status == "PENDENTE_APROVACAO"))
+        if "novo" in active_filters:
+            cutoff = agora - timedelta(days=1)
+            query = query.filter(Produto.data_criacao != None).filter(Produto.data_criacao >= cutoff)
+        if "atualizado" in active_filters:
+            cutoff = agora - timedelta(days=1)
+            # Seleciona produtos atualizados nas últimas 24h, excluindo os que foram
+            # criados nas últimas 24h (ou seja, "atualizado" não inclui "novo")
+            query = query.filter(
+                Produto.data_atualizacao != None,
+                Produto.data_atualizacao >= cutoff,
+                or_(Produto.data_criacao == None, Produto.data_criacao < cutoff)
+            )
+        if "sem_tags" in active_filters:
+            query = query.filter(~Produto.tags.any())
+
+        # contar total (para paginação)
+        try:
+            total_count = query.order_by(None).count() or 0
+        except Exception:
+            # fallback genérico
+            total_count = db.query(func.count(Produto.id)).scalar() or 0
+
+        # ordenar e paginar; garantir carregamento das relações usadas na view
+        order_expr = func.coalesce(Produto.data_atualizacao, Produto.data_criacao).desc()
         produtos = (
-            db.query(Produto)
+            query
               .options(
                   selectinload(Produto.tags),
                   selectinload(Produto.historico_precos),
                   selectinload(Produto.ofertas),
               )
+              .order_by(order_expr)
+              .offset((page - 1) * PER_PAGE)
+              .limit(PER_PAGE)
               .all()
         )
 
-        # Coleta os IDs de loja existentes nos produtos
+        # Coleta os IDs de loja existentes nos produtos (otimização)
         seller_ids = {p.product_id_loja for p in produtos if getattr(p, "product_id_loja", None)}
         alt_ids    = {getattr(p, "product_id_loja_alt", None) for p in produtos if getattr(p, "product_id_loja_alt", None)}
 
@@ -150,19 +206,14 @@ def lista_produtos():
             by_seller = {l.id_loja_api: l.nome_loja for l in lojas if getattr(l, "id_loja_api", None)}
             by_alt    = {l.id_loja_api_alt: l.nome_loja for l in lojas if getattr(l, "id_loja_api_alt", None)}
 
-        # Anota nome da loja (se encontrado) sem depender da tabela no template
+        # Anota campos auxiliares nos objetos para a view
         for p in produtos:
             p._nome_loja = by_seller.get(getattr(p, "product_id_loja", None)) \
                            or by_alt.get(getattr(p, "product_id_loja_alt", None))
-            
-            # Requirement 6: Marca se produto já foi postado
+
             p._foi_postado = any(oferta.status == "PUBLICADO" for oferta in p.ofertas)
-            
-            # Requirement 7: Marca se produto está na fila de aprovação
             p._na_fila = any(oferta.status == "PENDENTE_APROVACAO" for oferta in p.ofertas)
-            
-            # Requirement 8: Marca se produto é novo ou foi atualizado recentemente (1 dia)
-            agora = datetime.now()
+
             p._e_novo = False
             p._foi_atualizado = False
             if getattr(p, "data_criacao", None):
@@ -171,17 +222,23 @@ def lista_produtos():
                     p._e_novo = True
             if getattr(p, "data_atualizacao", None):
                 diferenca_atualizacao = agora - p.data_atualizacao
-                # Só marca como atualizado se não for novo
                 if diferenca_atualizacao <= timedelta(days=1) and not p._e_novo:
                     p._foi_atualizado = True
-            
-            # Requirement 4: Verifica se loja está ativa
+
             loja = None
             if p.product_id_loja:
                 loja = db.query(LojaConfiavel).filter(LojaConfiavel.id_loja_api == p.product_id_loja).first()
             p._loja_ativa = loja.ativa if loja else False
 
-    return render_template("produtos.html", produtos=produtos)
+    total_pages = max(1, (total_count + PER_PAGE - 1) // PER_PAGE)
+    # passa active_filters e q para o template para marcar botões/preservar nos links
+    return render_template("produtos.html",
+                           produtos=produtos,
+                           page=page,
+                           total_pages=total_pages,
+                           total_count=total_count,
+                           active_filters=active_filters,
+                           q=q)
 
 @app.route("/variaveis")
 def variaveis():

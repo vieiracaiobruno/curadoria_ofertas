@@ -822,3 +822,41 @@ def api_get_produto_ofertas(produto_id):
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         db.close()
+
+@api_bp.route("/produtos/<int:produto_id>/tags", methods=["DELETE"])
+def api_remove_tag_from_product(produto_id):
+    """
+    Remove uma tag existente do produto.
+    Body: {"tag": "nome_da_tag"}
+    Não permite remover a última tag do produto (retorna 400).
+    """
+    db = SessionLocal()
+    try:
+        produto = db.get(Produto, produto_id)
+        if not produto:
+            return jsonify({"status": "error", "message": "Produto não encontrado."}), 404
+
+        payload = request.get_json() or {}
+        tag_name = (payload.get("tag") or "").strip()
+        if not tag_name:
+            return jsonify({"status": "error", "message": "Nome da tag é obrigatório."}), 400
+
+        # normaliza com a função já disponível no arquivo
+        tag_norm = _normalize_tag_name(tag_name)
+        tag_obj = db.query(Tag).filter(Tag.nome_tag == tag_norm).first()
+        if not tag_obj or tag_obj not in produto.tags:
+            return jsonify({"status": "error", "message": "Tag não encontrada no produto."}), 404
+
+        # Não remover última tag
+        if len(produto.tags) <= 1:
+            return jsonify({"status": "error", "message": "Não é possível remover a última tag do produto."}), 400
+
+        produto.tags.remove(tag_obj)
+        db.commit()
+
+        return jsonify({"status": "success", "message": "Tag removida do produto.", "tag": tag_norm}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        db.close()
