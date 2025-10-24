@@ -19,10 +19,12 @@ sys.path.insert(0, project_root)
 
 from backend.db.database import SessionLocal
 from backend.modules.collectors.ml_collector import MLCollector
+from backend.modules.collectors.amazon_collector import AmazonCollector
 from backend.modules.services.offer_processor import OfferProcessor
 from backend.modules.services.validator import Validator
 from backend.modules.services.publisher import Publisher
 from backend.modules.services.metrics_analyzer import MetricsAnalyzer
+from backend.modules.utils.config import get_config
 
 
 logging.basicConfig(
@@ -39,16 +41,36 @@ class RunPipeline:
         try:
             logging.info("=== Iniciando Pipeline (classe) de Curadoria de Ofertas ===")
 
-            # 1) Coleta (Mercado Livre)
-            logging.info("Iniciando coleta (Mercado Livre / Selenium)…")
-            ml_collector = MLCollector()
-            items = ml_collector.run_collection()
-            logging.info(f"Coleta concluída. Itens extraídos: {len(items)}")
+            all_items = []
+
+            # 1a) Coleta (Mercado Livre)
+            enable_ml = (get_config("ENABLE_ML_COLLECTOR", "true") or "true").lower() in {"1", "true", "yes", "y"}
+            if enable_ml:
+                logging.info("Iniciando coleta (Mercado Livre)…")
+                ml_collector = MLCollector()
+                ml_items = ml_collector.run_collection()
+                logging.info(f"Coleta ML concluída. Itens extraídos: {len(ml_items)}")
+                all_items.extend(ml_items)
+            else:
+                logging.info("Coleta do Mercado Livre desabilitada (ENABLE_ML_COLLECTOR=false)")
+
+            # 1b) Coleta (Amazon)
+            enable_amazon = (get_config("ENABLE_AMAZON_COLLECTOR", "false") or "false").lower() in {"1", "true", "yes", "y"}
+            if enable_amazon:
+                logging.info("Iniciando coleta (Amazon)…")
+                amazon_collector = AmazonCollector()
+                amazon_items = amazon_collector.run_collection()
+                logging.info(f"Coleta Amazon concluída. Itens extraídos: {len(amazon_items)}")
+                all_items.extend(amazon_items)
+            else:
+                logging.info("Coleta da Amazon desabilitada (ENABLE_AMAZON_COLLECTOR=false)")
+
+            logging.info(f"Total de itens coletados: {len(all_items)}")
 
             # 2) Processamento/Persistência (estrutura de ofertas)
             logging.info("Processando itens (persistência/estrutura de ofertas)…")
             processor = OfferProcessor(self.db)
-            for it in items:
+            for it in all_items:
                 processor.process_item(it)
             logging.info(f"Processamento concluído. Stats: {processor.stats}")
 
