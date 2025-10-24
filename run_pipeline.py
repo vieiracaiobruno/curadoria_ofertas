@@ -44,7 +44,7 @@ class RunPipeline:
             all_items = []
 
             # 1a) Coleta (Mercado Livre)
-            enable_ml = (get_config("ENABLE_ML_COLLECTOR", "true") or "true").lower() in {"1", "true", "yes", "y"}
+            enable_ml = (get_config("ENABLE_ML_COLLECTOR", "true")).lower() in {"1", "true", "yes", "y"}
             if enable_ml:
                 logging.info("Iniciando coleta (Mercado Livre)…")
                 ml_collector = MLCollector()
@@ -55,7 +55,7 @@ class RunPipeline:
                 logging.info("Coleta do Mercado Livre desabilitada (ENABLE_ML_COLLECTOR=false)")
 
             # 1b) Coleta (Amazon)
-            enable_amazon = (get_config("ENABLE_AMAZON_COLLECTOR", "false") or "false").lower() in {"1", "true", "yes", "y"}
+            enable_amazon = (get_config("ENABLE_AMAZON_COLLECTOR", "false")).lower() in {"1", "true", "yes", "y"}
             if enable_amazon:
                 logging.info("Iniciando coleta (Amazon)…")
                 amazon_collector = AmazonCollector()
