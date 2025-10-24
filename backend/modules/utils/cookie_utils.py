@@ -5,7 +5,8 @@ from backend.modules.utils.config import get_config
 
 # Lista de sites de coleta para exportar cookies
 COLLECTION_SITES = [
-    "https://www.mercadolivre.com.br"
+    "https://www.mercadolivre.com.br",
+    "https://www.amazon.com.br"
 ]
 
 def update_all_site_cookies(user_data_dir: Optional[str] = None, profile_dir: Optional[str] = None) -> Dict[str, dict]:
