@@ -1,6 +1,6 @@
 # Sistema de Curadoria de Ofertas
 
-Um sistema automatizado completo para coleta, validação e publicação de ofertas do Mercado Livre em canais do Telegram, com painel web de gerenciamento.
+Um sistema automatizado completo para coleta, validação e publicação de ofertas do Mercado Livre e Amazon em canais do Telegram, com painel web de gerenciamento.
 
 ## 🚀 Funcionalidades Principais
 
@@ -51,14 +51,16 @@ curadoria_ofertas/
 │   ├── modules/
 │   │   ├── collectors/
 │   │   │   ├── base.py                # Classe base para coletores
-│   │   │   └── ml_collector.py        # Coletor do Mercado Livre
+│   │   │   ├── ml_collector.py        # Coletor do Mercado Livre
+│   │   │   └── amazon_collector.py    # Coletor da Amazon
 │   │   │
 │   │   ├── services/
 │   │   │   └── offer_processor.py     # Processamento de ofertas
 │   │   │
 │   │   ├── utils/
 │   │   │   ├── config.py              # Gerenciamento de configurações
-│   │   │   └── selenium_client.py     # Cliente Selenium reutilizável
+│   │   │   ├── selenium_client.py     # Cliente Selenium reutilizável
+│   │   │   └── cookie_utils.py        # Gerenciamento de cookies
 │   │   │
 │   │   ├── validator.py               # Validação de ofertas
 │   │   ├── publisher.py               # Publicação no Telegram
@@ -83,7 +85,8 @@ curadoria_ofertas/
 │   └── static/                        # Arquivos estáticos (CSS, JS)
 │
 └── scripts/                            # Scripts utilitários
-    ├── iniciar_scrapper_ml.py         # Script de coleta standalone
+    ├── iniciar_scrapper_ml.py         # Script de coleta standalone (ML)
+    ├── iniciar_scrapper_amazon.py     # Script de coleta standalone (Amazon)
     └── iniciar_tabela_com_var.py      # Script de inicialização de dados
 ```
 
@@ -139,10 +142,16 @@ curadoria_ofertas/
    TELEGRAM_CHANNEL_ID=@seu_canal
    
    # Mercado Livre Collector Configuration
-   USE_SELENIUM=false          # true = Selenium, false = HTTP (mais rápido)
-   ML_MAX_PAGES=3              # Número de páginas para coletar
-   ML_REQUEST_DELAY_SEC=2      # Delay entre requisições (segundos)
-   ML_ENRICH_WORKERS=1         # Workers paralelos para enriquecimento
+   ENABLE_ML_COLLECTOR=true        # Habilita/desabilita coleta do ML
+   USE_SELENIUM=false              # true = Selenium, false = HTTP (mais rápido)
+   ML_MAX_PAGES=3                  # Número de páginas para coletar
+   ML_REQUEST_DELAY_SEC=2          # Delay entre requisições (segundos)
+   ML_ENRICH_WORKERS=1             # Workers paralelos para enriquecimento
+   
+   # Amazon Collector Configuration
+   ENABLE_AMAZON_COLLECTOR=false   # Habilita/desabilita coleta da Amazon
+   AMAZON_MAX_PAGES=3              # Número de páginas para coletar
+   AMAZON_REQUEST_DELAY_SEC=2      # Delay entre requisições (segundos)
    
    # Logging Configuration (opcional)
    LOG_FILE=./logs/pipeline.log
@@ -188,6 +197,29 @@ O sistema suporta dois modos de coleta do Mercado Livre, configurável via `USE_
 - ⚠️ Pode ser detectado como bot em algumas situações
 
 **Recomendação**: Use modo HTTP para coletas frequentes e produção. Use Selenium apenas se precisar dos campos extras.
+
+### Configuração de Coletores
+
+O sistema suporta múltiplos coletores que podem ser habilitados/desabilitados individualmente:
+
+#### 🛒 Coletor do Mercado Livre
+- **Habilitado por padrão** (`ENABLE_ML_COLLECTOR=true`)
+- Suporta modo HTTP e Selenium
+- Configurações: `ML_MAX_PAGES`, `ML_REQUEST_DELAY_SEC`, `ML_ENRICH_WORKERS`
+
+#### 📦 Coletor da Amazon
+- **Desabilitado por padrão** (`ENABLE_AMAZON_COLLECTOR=false`)
+- Usa apenas modo HTTP (mais rápido e confiável)
+- Configurações: `AMAZON_MAX_PAGES`, `AMAZON_REQUEST_DELAY_SEC`
+- **Como habilitar**:
+  1. No arquivo `config.env`, defina `ENABLE_AMAZON_COLLECTOR=true`
+  2. Configure o número de páginas: `AMAZON_MAX_PAGES=3`
+  3. Execute o pipeline normalmente: `python run_pipeline.py`
+
+**Nota**: Para testar apenas o coletor da Amazon, use o script standalone:
+```bash
+python scripts/iniciar_scrapper_amazon.py
+```
 
 ### Configuração do Telegram
 
@@ -403,6 +435,7 @@ export FLASK_DEBUG=True
 - **Collectors** (`backend/modules/collectors/`): Implementam coleta de dados
   - `BaseCollector`: Classe abstrata base
   - `MLCollector`: Implementação para Mercado Livre
+  - `AmazonCollector`: Implementação para Amazon Brasil
 
 - **Services** (`backend/modules/services/`): Lógica de negócio
   - `OfferProcessor`: Processa e persiste ofertas
@@ -410,6 +443,7 @@ export FLASK_DEBUG=True
 - **Utils** (`backend/modules/utils/`): Utilitários
   - `config.py`: Gerenciamento de configurações
   - `selenium_client.py`: Cliente Selenium reutilizável
+  - `cookie_utils.py`: Gerenciamento de cookies para múltiplos sites
 
 ### Adicionando Novos Coletores
 
@@ -547,7 +581,8 @@ Contribuições são bem-vindas! Para contribuir:
 
 ## 📝 Roadmap
 
-- [ ] Suporte a mais plataformas (Amazon, AliExpress)
+- [x] Suporte à Amazon Brasil
+- [ ] Suporte a mais plataformas (AliExpress, Shopee)
 - [ ] Dashboard de métricas avançadas
 - [ ] Sistema de notificações por email
 - [ ] API GraphQL para consultas complexas
